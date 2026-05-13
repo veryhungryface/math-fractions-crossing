@@ -315,13 +315,16 @@ function spawnLane(z, forceType) {
   if (type === 'river') {
     const dir = state.rng() < 0.5 ? 1 : -1;
     const speed = (0.85 + state.rng() * 0.5) * dir;
-    const logGap = state.variant === 'boss' ? 4 : 3;
-    const count = Math.ceil(LANE_W / logGap) + 1;
+    // 뗏목(raft): 더 두껍고 넓게. 강 칸에 빈 공간 명확히 — 충돌 미스 시 즉시 익사
+    const raftW = 2.8;
+    const raftGap = state.variant === 'boss' ? 6.0 : 5.0;  // 뗏목 사이 빈 공간 충분히
+    const count = Math.ceil(LANE_W / raftGap) + 1;
+    const offset0 = state.rng() * raftGap;
     for (let i = 0; i < count; i++) {
-      const log = makeSprite('obj_log', 2.5, 0.85);
-      log.position.set(-CELL_HALF + i * logGap + state.rng() * 0.6, 0.05, z);
+      const log = makeSprite('obj_log', raftW, 1.05);
+      log.position.set(-CELL_HALF - 2 + offset0 + i * raftGap, 0.15, z);
       world.add(log);
-      lane.objects.push({ kind: 'log', mesh: log, speed, w: 2.5 });
+      lane.objects.push({ kind: 'log', mesh: log, speed, w: raftW });
     }
   }
 
@@ -689,10 +692,10 @@ function tick() {
         }
         updatePlayerSprite(p);
       } else {
-        // 통나무 위에서 같이 이동
+        // 뗏목 위에서 같이 이동
         if (p.onLog) {
           p.x += p.onLog.speed * dt;
-          if (Math.abs(p.x) > 6.5) endPlayer(p, 'river_fall');
+          if (Math.abs(p.x) > PLAYABLE_HALF + 0.5) endPlayer(p, 'river_fall');
         }
         updatePlayerSprite(p);
 
@@ -915,6 +918,20 @@ document.getElementById('btn-start').addEventListener('click', () => {
 });
 document.getElementById('btn-restart').addEventListener('click', () => {
   location.reload();
+});
+
+// 시스템 버튼: 홈 + 전체화면
+document.getElementById('btn-home').addEventListener('click', () => {
+  if (confirm('첫 화면(인원 선택)으로 돌아갈까요? 현재 진행 상황은 사라집니다.')) {
+    location.reload();
+  }
+});
+document.getElementById('btn-fullscreen').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  } else {
+    document.exitFullscreen?.();
+  }
 });
 
 function startGame() {
