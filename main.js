@@ -709,12 +709,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow (각 P별)
+      // 카메라 follow (각 P별) — lerp 빠르게 해서 hop 즉시 화면 반영
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.12;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.12;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.32;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.32;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
@@ -918,7 +918,6 @@ document.getElementById('btn-restart').addEventListener('click', () => {
 });
 
 function startGame() {
-  // 인원에 맞춰 player 생성. 1P: cx=0, 2P: -2,2, 3P: -3,0,3, 4P: -4.5,-1.5,1.5,4.5
   const xPositions = {
     1: [0],
     2: [-2, 2],
@@ -930,6 +929,13 @@ function startGame() {
   }
   rebuildCameras();
   buildHUDs();
+  // 카메라 초기 위치를 player에 즉시 보정 (lerp 시작 lag 방지)
+  for (const p of players) {
+    if (!p.camera) continue;
+    p.camera.position.set(p.x + CAM_OFFSET.x, CAM_OFFSET.y, p.z + CAM_OFFSET.z);
+    const f = p.camera.userData.forwardOffset;
+    p.camera.lookAt(p.camera.position.x + f.x, p.camera.position.y + f.y, p.camera.position.z + f.z);
+  }
 }
 
 // ============================================================
