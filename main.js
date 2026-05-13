@@ -246,19 +246,16 @@ function spawnLane(z, forceType) {
       world.add(book);
       lane.book = { mesh: book, slot: slotId };
       lane.isBuildingLane = true;
-      // 통로 강제: 책 양옆 모든 칸을 나무로 막음 (cx=-6..-2, 2..6) — cx=-1,0,1만 통과 가능
-      // 실제로는 책이 cx=0 위치를 막으므로 cx=-1, cx=1로만 진입 가능 (책 좌우 살짝 옆)
-      // → 더 강한 통로: 책 정면 cx=0이 유일한 진입 (좌우는 모두 나무)
+      // 강한 통로 강제: 책(cx=0) 양옆 모든 칸(cx=±1..±6)을 나무로 막음 → 책만 통과 가능
       for (let cx = -6; cx <= 6; cx++) {
-        if (cx === 0) continue;  // 책 위치
-        if (Math.abs(cx) === 1) continue;  // 통로 살짝 여유 (양옆 1칸)
+        if (cx === 0) continue;  // 책 위치만 비움
         const tree = makeSprite('obj_tree', 1.7, 2.1);
         tree.position.set(cx, 1.05, z);
         world.add(tree);
         lane.decorations.push({ mesh: tree, cx });
         lane.blockedCells.add(cx);
       }
-      // 책 자체도 막힘 (cx=0 = 책 진입 트리거)
+      // 책 진입은 cx=0만 가능 (퀴즈 트리거)
     } else {
       // 일반 잔디 — 나무/덤불 무작위
       for (let cx = -6; cx <= 6; cx++) {
@@ -320,9 +317,11 @@ function spawnLane(z, forceType) {
     const raftGap = state.variant === 'boss' ? 6.0 : 5.0;  // 뗏목 사이 빈 공간 충분히
     const count = Math.ceil(LANE_W / raftGap) + 1;
     const offset0 = state.rng() * raftGap;
+    // PNG는 정사각 1024x1024이고 뗏목이 그 안에 정사각에 가까운 비율로 그려짐
+    // sprite scale을 정사각 비율(2.4 x 2.4)에 가깝게 잡되 시각상 직사각으로 보이게
     for (let i = 0; i < count; i++) {
-      const log = makeSprite('obj_log', raftW, 1.05);
-      log.position.set(-CELL_HALF - 2 + offset0 + i * raftGap, 0.15, z);
+      const log = makeSprite('obj_log', raftW, raftW);   // 정사각 sprite로 PNG aspect 유지
+      log.position.set(-CELL_HALF - 2 + offset0 + i * raftGap, 0.05, z);
       world.add(log);
       lane.objects.push({ kind: 'log', mesh: log, speed, w: raftW });
     }
@@ -365,6 +364,17 @@ function makePlayer(idx, startX) {
     camera: null,
     sprites: {},
   };
+  // 캐릭터 발 밑 그림자 (둥근 검정 plane)
+  const shadowGeo = new THREE.PlaneGeometry(0.85, 0.5);
+  const shadowMat = new THREE.MeshBasicMaterial({
+    color: 0x000000, transparent: true, opacity: 0.32, depthWrite: false
+  });
+  const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.set(p.x, 0.05, p.z);
+  world.add(shadow);
+  p.shadow = shadow;
+
   // 닭 sprite 4종 (있는 것만)
   ['idle','hop','left','right'].forEach(dir => {
     const slotId = dir === 'idle' ? 'char_chicken_idle' : dir === 'hop' ? 'char_chicken_hop' : `char_chicken_${dir}`;
@@ -376,14 +386,12 @@ function makePlayer(idx, startX) {
       p.sprites[dir] = sp;
     }
   });
-  // fallback: idle만 있는 경우 left/right도 idle 사용
   p.currentSprite = p.sprites.idle;
   return p;
 }
 
 function updatePlayerSprite(p) {
   if (!p.sprites.idle) return;
-  // 활성 방향 결정
   let target = 'idle';
   if (p.isHopping) {
     if (p.hopFacing === 'left' && p.sprites.left) target = 'left';
@@ -398,6 +406,13 @@ function updatePlayerSprite(p) {
     sp.position.set(p.x, 0.55 + p.yOffset, p.z);
   }
   p.currentSprite = p.sprites[target];
+  // 그림자는 yOffset에 영향 안 받고 발 위치(y=0.05) 고정. hop 중에는 살짝 축소.
+  if (p.shadow) {
+    p.shadow.position.set(p.x, 0.05, p.z);
+    const s = p.isHopping ? Math.max(0.5, 1 - p.yOffset * 1.2) : 1;
+    p.shadow.scale.set(s, s, 1);
+    p.shadow.material.opacity = 0.32 * s;
+  }
 }
 
 function rebuildCameras() {
@@ -570,21 +585,31 @@ function resolveQuiz(p, tile) {
   p.quizAttempts++;
   if (tile.isCorrect) {
     p.quizCorrect++;
-    p.score += RULES.scoring.quiz_correct_score;
+    const baseScore = RULES.scoring.quiz_correct_score;
+    let totalScore = baseScore;
+    p.score += baseScore;
     p.coins += RULES.scoring.quiz_correct_coins;
     p.combo++;
     if (p.combo > p.maxCombo) p.maxCombo = p.combo;
     if (p.combo >= RULES.scoring.combo_streak_threshold) {
       p.score += RULES.scoring.combo_bonus_score;
       p.coins += RULES.scoring.combo_bonus_coins;
+      totalScore += RULES.scoring.combo_bonus_score;
     }
-    showFX('fx_correct', aq.targetLane.z, tile.cx);
+    // 정답: 화려한 멀티 파티클 + 점수 floating text
+    showFX('fx_correct', aq.targetLane.z, tile.cx, { scale: 1.6, life: 1.2 });
+    showStarBurst(aq.targetLane.z, tile.cx);   // 별 8방향 흩날림
+    showFloatingScore(`+${totalScore}점!`, aq.targetLane.z, tile.cx, '#FFE34A');
+    if (p.combo >= RULES.scoring.combo_streak_threshold) {
+      showFloatingScore(`🔥 콤보 x${p.combo}!`, aq.targetLane.z, tile.cx + 1.5, '#FF6B6B');
+    }
+    flashScreen('rgba(255,210,58,0.25)');
   } else {
     p.coins = Math.max(0, p.coins - 3);
     p.combo = 0;
     showFX('fx_wrong', aq.targetLane.z, tile.cx);
+    showFloatingScore('-3 코인', aq.targetLane.z, tile.cx, '#FF6B6B');
   }
-  // 타일 제거
   aq.tiles.forEach(t => {
     world.remove(t.mesh); world.remove(t.label);
     t.mesh.material?.dispose?.();
@@ -594,15 +619,76 @@ function resolveQuiz(p, tile) {
   document.getElementById('quiz-modal').classList.remove('show');
 }
 
+// 별 8방향 흩어짐 (정답 보너스 파티클)
+function showStarBurst(z, cx) {
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const tex = textures['fx_correct'] || textures['item_coin'];
+    if (!tex) return;
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(0.45, 0.45, 1);
+    sprite.position.set(cx, 1.0, z);
+    world.add(sprite);
+    activeFx.push({
+      mesh: sprite, life: 0.9, vx: Math.cos(angle) * 2.2,
+      vy: 1.8 + Math.random() * 0.4, vz: Math.sin(angle) * 2.2,
+      gravity: -3.5
+    });
+  }
+}
+
+// floating 점수 text (Canvas → Sprite)
+function showFloatingScore(text, z, cx, color = '#FFD23A') {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = 'bold 80px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = '#000';
+  ctx.strokeText(text, 256, 64);
+  ctx.fillStyle = color;
+  ctx.fillText(text, 256, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.4, 0.6, 1);
+  sprite.position.set(cx, 1.5, z);
+  world.add(sprite);
+  activeFx.push({ mesh: sprite, life: 1.4, vy: 1.5, isText: true });
+}
+
+// 화면 잠깐 번쩍
+function flashScreen(rgba) {
+  let flash = document.getElementById('screen-flash');
+  if (!flash) {
+    flash = document.createElement('div');
+    flash.id = 'screen-flash';
+    flash.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:25;background:transparent;transition:background 0.5s;';
+    document.getElementById('app').appendChild(flash);
+  }
+  flash.style.background = rgba;
+  flash.style.transition = 'background 0s';
+  requestAnimationFrame(() => {
+    flash.style.transition = 'background 0.45s ease-out';
+    flash.style.background = 'transparent';
+  });
+}
+
 // ============================================================
 // FX
 // ============================================================
 const activeFx = [];
-function showFX(slotId, z, cx = 0) {
-  const fx = makeSprite(slotId, 1.2, 1.2);
+function showFX(slotId, z, cx = 0, opts = {}) {
+  const scale = opts.scale ?? 1.2;
+  const life = opts.life ?? 0.7;
+  const fx = makeSprite(slotId, scale, scale);
   fx.position.set(cx, 1.1, z);
   world.add(fx);
-  activeFx.push({ mesh: fx, life: 0.7 });
+  activeFx.push({ mesh: fx, life });
 }
 
 // ============================================================
@@ -733,15 +819,23 @@ function tick() {
     }
   }
 
-  // FX
+  // FX 업데이트 (별 흩날림, 점수 텍스트 부유)
   for (let i = activeFx.length - 1; i >= 0; i--) {
     const fx = activeFx[i];
     fx.life -= dt;
-    fx.mesh.position.y += dt * 0.5;
-    fx.mesh.material.opacity = Math.max(0, fx.life / 0.7);
+    // 속도 기반 이동
+    if (fx.vx !== undefined) fx.mesh.position.x += fx.vx * dt;
+    if (fx.vz !== undefined) fx.mesh.position.z += fx.vz * dt;
+    if (fx.vy !== undefined) fx.mesh.position.y += fx.vy * dt;
+    if (fx.gravity !== undefined) fx.vy = (fx.vy ?? 0) + fx.gravity * dt;
+    // 기본 위로 떠오름 (vy 없을 때만)
+    if (fx.vy === undefined) fx.mesh.position.y += dt * 0.5;
+    const maxLife = fx.isText ? 1.4 : 0.9;
+    fx.mesh.material.opacity = Math.max(0, fx.life / maxLife);
     if (fx.life <= 0) {
       world.remove(fx.mesh);
       fx.mesh.material?.dispose?.();
+      if (fx.mesh.material?.map?.dispose) fx.mesh.material.map.dispose();
       activeFx.splice(i, 1);
     }
   }
