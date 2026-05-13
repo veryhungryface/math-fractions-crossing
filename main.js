@@ -12,9 +12,10 @@ const VARIANTS = config.variants;
 const RULES = config.rules;
 
 const CELL = 1;
-const LANE_W = 22;            // 배경 잘림 방지 — 가로 넓게 확장
+const PLAYABLE_HALF = 6;            // hop 가능 좌우 범위 (-6..+6)
+const LANE_W = PLAYABLE_HALF * 2 + 1.0;  // 13 — hop 범위와 거의 일치
 const CELL_HALF = LANE_W * 0.5;
-const PLAYABLE_HALF = 6;      // 실제 hop 가능 범위는 좌우 6칸 (LANE_W는 시각용)
+const LANE_VISUAL_PAD = 0.6;         // 뗏목/트럭 wrap 시각 여유
 const BOSS_SCORE_GTE = RULES.boss_trigger.score_gte;
 const BOSS_LANES_GTE = RULES.boss_trigger.lanes_crossed_gte;
 const BUILDING_INTERVAL = RULES.building_interval_lanes;
@@ -345,11 +346,12 @@ function makePlayer(idx, startX) {
     yOffset: 0,
     isHopping: false,
     hopT: 0,
-    hopDur: 0.18,
+    hopDur: 0.14,            // 더 빠른 hop
     hopFrom: null,
     hopTo: null,
     onLog: null,
-    facing: 'forward',  // forward / left / right
+    facing: 'forward',
+    pendingHop: null,        // 큐잉 — hop 도중 들어온 입력 1개 기억
     score: 0,
     coins: 0,
     lanesCrossed: 0,
@@ -433,7 +435,11 @@ function rebuildCameras() {
 // 카메라 회전으로 인해 게임 +X는 화면 left이므로, 게임 좌표 dx = -screenDx로 매핑.
 function tryHop(p, screenDx, dz) {
   if (p.isGameOver) return;
-  if (p.isHopping) return;
+  if (p.isHopping) {
+    // hop 도중 입력은 큐잉 (다음 hop 1개만 기억)
+    p.pendingHop = { screenDx, dz };
+    return;
+  }
   const gameDx = -screenDx;   // 화면 좌표 → 게임 좌표 부호 반전
   const newX = p.x + gameDx;
   const newLaneIdx = p.laneIndex + (dz > 0 ? 1 : (dz < 0 ? -1 : 0));
@@ -516,6 +522,18 @@ function presentQuiz(p, lane) {
   if (!targetLane) {
     nextLaneZ += CELL;
     targetLane = spawnLane(nextLaneZ, 'grass');
+  }
+  // 보기 가림 방지 — target lane의 모든 decoration/coin 제거
+  for (const d of targetLane.decorations) {
+    world.remove(d.mesh);
+    d.mesh.material?.dispose?.();
+  }
+  targetLane.decorations = [];
+  targetLane.blockedCells.clear();
+  if (targetLane.coin) {
+    world.remove(targetLane.coin.mesh);
+    targetLane.coin.mesh.material?.dispose?.();
+    targetLane.coin = null;
   }
   const positions = [-3, -1, 1, 3];
   const tiles = indexed.map((it, idx) => {
@@ -751,12 +769,13 @@ function tick() {
   requestAnimationFrame(tick);
 
   if (state.mode === 'play') {
-    // 트럭/통나무 wrap
+    // 트럭/뗏목 wrap — lane 끝 살짝 너머에서 자연스럽게 사라짐/등장 (잘림 방지)
     for (const lane of lanes) {
       for (const obj of lane.objects) {
         obj.mesh.position.x += obj.speed * dt;
-        if (obj.mesh.position.x > CELL_HALF + 2.5) obj.mesh.position.x = -CELL_HALF - 2.5;
-        if (obj.mesh.position.x < -CELL_HALF - 2.5) obj.mesh.position.x = CELL_HALF + 2.5;
+        const wrapLimit = CELL_HALF + obj.w / 2 + LANE_VISUAL_PAD;
+        if (obj.mesh.position.x > wrapLimit) obj.mesh.position.x = -wrapLimit;
+        if (obj.mesh.position.x < -wrapLimit) obj.mesh.position.x = wrapLimit;
       }
     }
 
@@ -767,7 +786,7 @@ function tick() {
       if (p.isHopping) {
         p.hopT += dt;
         const t = Math.min(1, p.hopT / p.hopDur);
-        p.yOffset = Math.sin(t * Math.PI) * 0.35;
+        p.yOffset = Math.sin(t * Math.PI) * 0.55;     // 점프 호 키움 (시각 명확)
         const fx = p.hopFrom.x, fz = p.hopFrom.z;
         const tx = p.hopTo.x, tz = p.hopTo.z;
         p.x = fx + (tx - fx) * t;
@@ -775,6 +794,12 @@ function tick() {
         if (t >= 1) {
           p.x = tx; p.z = tz; p.isHopping = false; p.yOffset = 0;
           onLandOnLane(p);
+          // 큐잉된 다음 hop 즉시 실행
+          if (p.pendingHop && !p.isGameOver) {
+            const q = p.pendingHop;
+            p.pendingHop = null;
+            tryHop(p, q.screenDx, q.dz);
+          }
         }
         updatePlayerSprite(p);
       } else {
@@ -798,12 +823,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow (각 P별) — lerp 빠르게 해서 hop 즉시 화면 반영
+      // 카메라 follow (각 P별) — 첫 hop도 즉시 반영되도록 lerp 강하게
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.32;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.32;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.55;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.55;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
