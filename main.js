@@ -12,8 +12,9 @@ const VARIANTS = config.variants;
 const RULES = config.rules;
 
 const CELL = 1;
-const LANE_W = 13;
+const LANE_W = 22;            // 배경 잘림 방지 — 가로 넓게 확장
 const CELL_HALF = LANE_W * 0.5;
+const PLAYABLE_HALF = 6;      // 실제 hop 가능 범위는 좌우 6칸 (LANE_W는 시각용)
 const BOSS_SCORE_GTE = RULES.boss_trigger.score_gte;
 const BOSS_LANES_GTE = RULES.boss_trigger.lanes_crossed_gte;
 const BUILDING_INTERVAL = RULES.building_interval_lanes;
@@ -39,7 +40,7 @@ const root = document.getElementById('three-root');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x88c8ee);
-scene.fog = new THREE.Fog(0x88c8ee, 28, 60);
+scene.fog = new THREE.Fog(0x88c8ee, 50, 140);   // fog 거리 확장 → 배경이 가까이서 끊기지 않음
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(window.devicePixelRatio);
@@ -53,11 +54,21 @@ sun.position.set(10, 20, -10);
 scene.add(sun);
 
 // 카메라 offset (1P 기준)
+// camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
+// Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
 const CAM_OFFSET = new THREE.Vector3(-3, 14, -10);
 const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
 
-function makeCamera(aspect) {
-  const viewSize = 11;
+function makeCamera(aspect, playerCount) {
+  // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
+  // 분할 화면 비율이 좁을수록 viewSize 키워서 lane이 가득 차도록
+  let viewSize = 13;
+  if (playerCount >= 2) viewSize = 12;
+  if (playerCount >= 3) viewSize = 11;
+  if (playerCount >= 4) viewSize = 10;
+  // aspect가 너무 좁으면 가로가 좁아 lane 안 보임 → viewSize 보정
+  if (aspect < 0.55) viewSize = Math.max(10, viewSize * 0.55 / aspect * 0.6);
+
   const c = new THREE.OrthographicCamera(
     -viewSize * aspect / 2, viewSize * aspect / 2,
     viewSize / 2, -viewSize / 2,
@@ -290,10 +301,12 @@ function spawnLane(z, forceType) {
     for (let i = 0; i < count; i++) {
       const color = pool[Math.floor(state.rng() * pool.length)];
       const slotId = `obj_truck_${color}`;
-      // dir > 0 (우측 이동) → 원본 sprite. dir < 0 (좌측 이동) → flipped texture
-      const flipped = dir < 0;
+      // 트럭 sprite 원본 = "화면 right 향함" (앞머리가 화면 오른쪽).
+      // 게임 +X (dir>0) = 화면 left로 이동 → sprite mirror 필요 (flipped = true)
+      // 게임 -X (dir<0) = 화면 right로 이동 → sprite 그대로 (flipped = false)
+      const flipped = dir > 0;
       const truck = makeSprite(slotId, 1.9, 1.15, flipped);
-      truck.position.set(-CELL_HALF + i * startGap + state.rng() * 1.5, 0.6, z);
+      truck.position.set(-CELL_HALF * 0.6 + i * startGap + state.rng() * 1.5, 0.6, z);
       world.add(truck);
       lane.objects.push({ kind: 'truck', mesh: truck, speed, w: 1.9 });
     }
@@ -390,37 +403,40 @@ function rebuildCameras() {
   const subW = w / state.playerCount;
   const aspect = subW / h;
   for (const p of players) {
-    p.camera = makeCamera(aspect);
+    p.camera = makeCamera(aspect, state.playerCount);
   }
 }
 
 // ============================================================
 // HOP & INPUT
 // ============================================================
-function tryHop(p, dx, dz) {
+// screenDx: 화면 기준 좌우 (-1 = 화면 left, +1 = 화면 right) — 사용자 직관 좌표
+// dz: 전진(+1)/후진(-1)
+// 카메라 회전으로 인해 게임 +X는 화면 left이므로, 게임 좌표 dx = -screenDx로 매핑.
+function tryHop(p, screenDx, dz) {
   if (p.isGameOver) return;
   if (p.isHopping) return;
-  const newX = p.x + dx;
+  const gameDx = -screenDx;   // 화면 좌표 → 게임 좌표 부호 반전
+  const newX = p.x + gameDx;
   const newLaneIdx = p.laneIndex + (dz > 0 ? 1 : (dz < 0 ? -1 : 0));
-  if (Math.abs(newX) > 6) return;
+  if (Math.abs(newX) > PLAYABLE_HALF) return;
   if (newLaneIdx < 0) return;
-  // 앞으로 lane spawn 보장
   while (lanes.length < newLaneIdx + 12) {
     nextLaneZ += CELL;
     spawnLane(nextLaneZ);
   }
-  // 차단 칸 (나무/덤불) — 건물 lane은 cx=0 (책)이 통로
   const targetLane = lanes[newLaneIdx];
   const cxRound = Math.round(newX);
   if (targetLane.blockedCells && targetLane.blockedCells.has(cxRound)) {
-    return;  // 막힌 칸 hop 불가
+    return;
   }
   p.hopFrom = { x: p.x, z: p.z };
   p.hopTo = { x: newX, z: targetLane.z };
-  p.hopFacing = dx > 0 ? 'right' : (dx < 0 ? 'left' : 'forward');
-  if (dx > 0) p.facing = 'right';
-  else if (dx < 0) p.facing = 'left';
+  // facing은 화면 기준 — 사용자가 보는 좌우
+  if (screenDx > 0) p.facing = 'right';      // 화면 오른쪽 봄 → char_chicken_right.png
+  else if (screenDx < 0) p.facing = 'left';  // 화면 왼쪽 봄 → char_chicken_left.png
   else p.facing = 'forward';
+  p.hopFacing = p.facing;
   p.x = newX;
   p.laneIndex = newLaneIdx;
   p.z = targetLane.z;
@@ -433,16 +449,13 @@ function tryHop(p, dx, dz) {
   updatePlayerSprite(p);
 }
 
-// 키맵: P별 다른 키
+// 키맵: 화면 좌표 기준 (screenDx, dz)
+// [pIdx, screenDx, dz]
 const KEY_MAPS = [
-  // P1 — Arrow + WASD
   { 'ArrowLeft': [0,-1,0], 'ArrowRight': [0,1,0], 'ArrowUp': [0,0,1],
     'a': [0,-1,0], 'A': [0,-1,0], 'd': [0,1,0], 'D': [0,1,0], 'w': [0,0,1], 'W': [0,0,1] },
-  // P2 — F/T/H (T=up, F=left, H=right)
   { 'f': [1,-1,0], 'F': [1,-1,0], 'h': [1,1,0], 'H': [1,1,0], 't': [1,0,1], 'T': [1,0,1] },
-  // P3 — J/I/L
   { 'j': [2,-1,0], 'J': [2,-1,0], 'l': [2,1,0], 'L': [2,1,0], 'i': [2,0,1], 'I': [2,0,1] },
-  // P4 — Numpad 4/8/6
   { '4': [3,-1,0], '8': [3,0,1], '6': [3,1,0],
     'Numpad4': [3,-1,0], 'Numpad8': [3,0,1], 'Numpad6': [3,1,0] },
 ];
@@ -828,9 +841,10 @@ function bindTouchButtons() {
       if (state.mode !== 'play') return;
       const p = players[pIdx];
       if (!p) return;
+      // 화면 좌표: left = screenDx -1, right = +1
       if (dir === 'left')  tryHop(p, -1, 0);
-      if (dir === 'right') tryHop(p, 1, 0);
-      if (dir === 'up')    tryHop(p, 0, 1);
+      if (dir === 'right') tryHop(p, +1, 0);
+      if (dir === 'up')    tryHop(p,  0, 1);
       btn.classList.add('pressed');
       setTimeout(() => btn.classList.remove('pressed'), 120);
     };
