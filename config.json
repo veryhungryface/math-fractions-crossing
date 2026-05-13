@@ -1,0 +1,705 @@
+{
+  "game_id": "math-fractions-g5",
+  "title": "분수 크로싱",
+  "subject": "math/fractions-addition-unlike-denominators",
+  "target_grade": 5,
+  "grade_range": [
+    5,
+    5
+  ],
+  "mode": "single",
+  "engine_version": "1.0",
+  "viewport": {
+    "width": 1280,
+    "height": 720,
+    "scale_mode": "fit",
+    "background_clear": "#7AD0E8"
+  },
+  "camera": {
+    "type": "isometric",
+    "angle_deg": 45,
+    "auto_scroll": true,
+    "scroll_speed_px_per_frame": 1.0,
+    "scroll_accel_per_lane": 0.005
+  },
+  "grid": {
+    "cell_size_px": 64,
+    "lanes_per_screen": 9,
+    "cells_per_lane": 11
+  },
+  "slots": {
+    "bg_sky_day": {
+      "type": "background",
+      "size": [
+        1280,
+        320
+      ],
+      "anchor": "top-left",
+      "z": 0,
+      "status": "ready",
+      "dummy_color": "#7AD0E8",
+      "dummy_label": "SKY day",
+      "asset_path": "assets/bg_sky_day.png",
+      "chroma_key": null
+    },
+    "bg_sky_sunset": {
+      "type": "background",
+      "size": [
+        1280,
+        320
+      ],
+      "anchor": "top-left",
+      "z": 0,
+      "status": "ready",
+      "dummy_color": "#F5A26B",
+      "dummy_label": "SKY sunset (boss)",
+      "asset_path": "assets/bg_sky_sunset.png",
+      "chroma_key": null,
+      "states": [
+        "bg_sky_day"
+      ]
+    },
+    "bg_lane_grass": {
+      "type": "background",
+      "size": [
+        1280,
+        64
+      ],
+      "anchor": "top-left",
+      "z": 1,
+      "status": "ready",
+      "dummy_color": "#9CCD5E",
+      "dummy_label": "LANE grass",
+      "asset_path": "assets/bg_lane_grass.png",
+      "chroma_key": null
+    },
+    "bg_lane_road": {
+      "type": "background",
+      "size": [
+        1280,
+        64
+      ],
+      "anchor": "top-left",
+      "z": 1,
+      "status": "ready",
+      "dummy_color": "#3A3A3A",
+      "dummy_label": "LANE road",
+      "asset_path": "assets/bg_lane_road.png",
+      "chroma_key": null
+    },
+    "bg_lane_river": {
+      "type": "background",
+      "size": [
+        1280,
+        64
+      ],
+      "anchor": "top-left",
+      "z": 1,
+      "status": "ready",
+      "dummy_color": "#5BB7D6",
+      "dummy_label": "LANE river",
+      "asset_path": "assets/bg_lane_river.png",
+      "chroma_key": null
+    },
+    "char_chicken_idle": {
+      "type": "sprite",
+      "size": [
+        64,
+        64
+      ],
+      "anchor": "bottom-center",
+      "z": 12,
+      "status": "ready",
+      "dummy_color": "#FFFFFF",
+      "dummy_label": "CHICKEN idle",
+      "asset_path": "assets/char_chicken_idle.png",
+      "chroma_key": "#00FF00",
+      "states": [
+        "char_chicken_hop"
+      ]
+    },
+    "char_chicken_hop": {
+      "type": "sprite",
+      "size": [
+        64,
+        80
+      ],
+      "anchor": "bottom-center",
+      "z": 12,
+      "status": "ready",
+      "dummy_color": "#F2F2F2",
+      "dummy_label": "CHICKEN hop",
+      "asset_path": "assets/char_chicken_hop.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_tree": {
+      "type": "sprite",
+      "size": [
+        64,
+        96
+      ],
+      "anchor": "bottom-center",
+      "z": 8,
+      "status": "ready",
+      "dummy_color": "#4F8B3A",
+      "dummy_label": "TREE",
+      "asset_path": "assets/obj_tree.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_bush": {
+      "type": "sprite",
+      "size": [
+        64,
+        48
+      ],
+      "anchor": "bottom-center",
+      "z": 7,
+      "status": "ready",
+      "dummy_color": "#6FA844",
+      "dummy_label": "BUSH",
+      "asset_path": "assets/obj_bush.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_log": {
+      "type": "sprite",
+      "size": [
+        192,
+        64
+      ],
+      "anchor": "center",
+      "z": 6,
+      "status": "ready",
+      "dummy_color": "#8B5A2B",
+      "dummy_label": "LOG (river)",
+      "asset_path": "assets/obj_log.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_truck": {
+      "type": "sprite",
+      "size": [
+        128,
+        80
+      ],
+      "anchor": "center",
+      "z": 9,
+      "status": "ready",
+      "dummy_color": "#D33A2E",
+      "dummy_label": "TRUCK",
+      "asset_path": "assets/obj_truck_red.png",
+      "chroma_key": "#00FF00",
+      "color_variants": {
+        "red": {
+          "asset_path": "assets/obj_truck_red.png",
+          "dummy_color": "#D33A2E"
+        },
+        "orange": {
+          "asset_path": "assets/obj_truck_orange.png",
+          "dummy_color": "#E89132"
+        },
+        "white": {
+          "asset_path": "assets/obj_truck_white.png",
+          "dummy_color": "#F2F2F2"
+        },
+        "purple": {
+          "asset_path": "assets/obj_truck_purple.png",
+          "dummy_color": "#7E4BB5"
+        },
+        "dark": {
+          "asset_path": "assets/obj_truck_dark.png",
+          "dummy_color": "#2D2438"
+        },
+        "skull": {
+          "asset_path": "assets/obj_truck_skull.png",
+          "dummy_color": "#1F1A26"
+        }
+      }
+    },
+    "item_coin": {
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "anchor": "center",
+      "z": 8,
+      "status": "ready",
+      "dummy_color": "#FFD23A",
+      "dummy_label": "COIN",
+      "asset_path": "assets/item_coin.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_math_book_building": {
+      "type": "sprite",
+      "size": [
+        192,
+        256
+      ],
+      "anchor": "bottom-center",
+      "z": 11,
+      "status": "ready",
+      "dummy_color": "#C7A36B",
+      "dummy_label": "MATH BOOK (default)",
+      "asset_path": "assets/obj_math_book_building.png",
+      "chroma_key": "#00FF00",
+      "states": [
+        "obj_math_book_boss"
+      ]
+    },
+    "obj_math_book_boss": {
+      "type": "sprite",
+      "size": [
+        256,
+        320
+      ],
+      "anchor": "bottom-center",
+      "z": 11,
+      "status": "ready",
+      "dummy_color": "#A2742E",
+      "dummy_label": "MATH BOOK (boss)",
+      "asset_path": "assets/obj_math_book_boss.png",
+      "chroma_key": "#00FF00"
+    },
+    "obj_quiz_tile": {
+      "type": "sprite",
+      "size": [
+        128,
+        128
+      ],
+      "anchor": "center",
+      "z": 10,
+      "status": "ready",
+      "dummy_color": "#F2E29A",
+      "dummy_label": "QUIZ TILE",
+      "asset_path": "assets/obj_quiz_tile.png",
+      "chroma_key": "#00FF00",
+      "render_text_overlay": true
+    },
+    "ui_score": {
+      "type": "ui",
+      "size": [
+        220,
+        56
+      ],
+      "anchor": "top-left",
+      "offset": [
+        16,
+        16
+      ],
+      "z": 20,
+      "status": "ready",
+      "dummy_color": "#00000088",
+      "dummy_label": "점수: 0",
+      "asset_path": "assets/ui_score.png",
+      "chroma_key": null,
+      "render_text_overlay": true
+    },
+    "ui_coin_counter": {
+      "type": "ui",
+      "size": [
+        160,
+        56
+      ],
+      "anchor": "top-right",
+      "offset": [
+        -16,
+        16
+      ],
+      "z": 20,
+      "status": "ready",
+      "dummy_color": "#FFD23A",
+      "dummy_label": "코인: 0",
+      "asset_path": "assets/ui_coin_counter.png",
+      "chroma_key": null,
+      "render_text_overlay": true
+    },
+    "ui_quiz_modal": {
+      "type": "ui",
+      "size": [
+        560,
+        240
+      ],
+      "anchor": "top-center",
+      "offset": [
+        0,
+        60
+      ],
+      "z": 22,
+      "status": "ready",
+      "dummy_color": "#1A1A1ACC",
+      "dummy_label": "QUIZ MODAL",
+      "asset_path": "assets/ui_quiz_modal.png",
+      "chroma_key": null,
+      "render_text_overlay": true
+    },
+    "ui_boss_banner": {
+      "type": "ui",
+      "size": [
+        1280,
+        64
+      ],
+      "anchor": "bottom-center",
+      "offset": [
+        0,
+        -24
+      ],
+      "z": 23,
+      "status": "ready",
+      "dummy_color": "#D33A2E",
+      "dummy_label": "보스 스테이지!",
+      "asset_path": "assets/ui_boss_banner.png",
+      "chroma_key": null,
+      "render_text_overlay": true
+    },
+    "fx_correct": {
+      "type": "fx",
+      "size": [
+        128,
+        128
+      ],
+      "anchor": "center",
+      "z": 30,
+      "status": "ready",
+      "dummy_color": "#FFE34A",
+      "dummy_label": "FX correct",
+      "asset_path": "assets/fx_correct.png",
+      "chroma_key": "#00FF00",
+      "frame_count": 6
+    },
+    "fx_wrong": {
+      "type": "fx",
+      "size": [
+        128,
+        128
+      ],
+      "anchor": "center",
+      "z": 30,
+      "status": "ready",
+      "dummy_color": "#D33A2E",
+      "dummy_label": "FX wrong",
+      "asset_path": "assets/fx_wrong.png",
+      "chroma_key": "#00FF00",
+      "frame_count": 6
+    },
+    "fx_coin_pickup": {
+      "type": "fx",
+      "size": [
+        64,
+        64
+      ],
+      "anchor": "center",
+      "z": 29,
+      "status": "ready",
+      "dummy_color": "#FFF2A6",
+      "dummy_label": "FX coin",
+      "asset_path": "assets/fx_coin_pickup.png",
+      "chroma_key": "#00FF00",
+      "frame_count": 4
+    },
+    "fx_combo_halo": {
+      "type": "fx",
+      "size": [
+        96,
+        96
+      ],
+      "anchor": "bottom-center",
+      "z": 13,
+      "status": "ready",
+      "dummy_color": "#7CE07A",
+      "dummy_label": "FX combo halo",
+      "asset_path": "assets/fx_combo_halo.png",
+      "chroma_key": "#00FF00",
+      "frame_count": 8,
+      "comment": "캐릭터 발치 후광. 콤보 0→1→2→3 단계에 따라 색 변화: 없음→녹색→노랑→빨강."
+    },
+    "ui_combo_bar": {
+      "type": "ui",
+      "size": [
+        320,
+        24
+      ],
+      "anchor": "top-center",
+      "offset": [
+        0,
+        80
+      ],
+      "z": 21,
+      "status": "ready",
+      "dummy_color": "#1A1A1ACC",
+      "dummy_label": "COMBO bar",
+      "asset_path": "assets/ui_combo_bar.png",
+      "chroma_key": null,
+      "render_text_overlay": true,
+      "comment": "상단 가로 콤보 바. 채워진 정도와 'x3 COMBO!' 텍스트 동적 렌더."
+    }
+  },
+  "scenes": {
+    "intro": {
+      "slots": [
+        "bg_sky_day",
+        "bg_lane_grass",
+        "char_chicken_idle",
+        "obj_tree",
+        "obj_bush",
+        "ui_score",
+        "ui_coin_counter"
+      ],
+      "on_enter": "scenes/intro.js"
+    },
+    "play": {
+      "slots": [
+        "bg_sky_day",
+        "bg_sky_sunset",
+        "bg_lane_grass",
+        "bg_lane_road",
+        "bg_lane_river",
+        "char_chicken_idle",
+        "char_chicken_hop",
+        "obj_tree",
+        "obj_bush",
+        "obj_log",
+        "obj_truck",
+        "item_coin",
+        "obj_math_book_building",
+        "obj_math_book_boss",
+        "obj_quiz_tile",
+        "ui_score",
+        "ui_coin_counter",
+        "ui_quiz_modal",
+        "ui_boss_banner",
+        "ui_combo_bar",
+        "fx_correct",
+        "fx_wrong",
+        "fx_coin_pickup",
+        "fx_combo_halo"
+      ],
+      "on_enter": "scenes/play.js"
+    },
+    "result": {
+      "slots": [
+        "bg_sky_day",
+        "bg_lane_grass",
+        "char_chicken_idle",
+        "ui_score",
+        "ui_coin_counter"
+      ],
+      "on_enter": "scenes/result.js"
+    }
+  },
+  "rules": {
+    "building_interval_lanes": 10,
+    "quiz_choices_count": 4,
+    "boss_trigger": {
+      "score_gte": 300,
+      "lanes_crossed_gte": 30,
+      "logic": "or",
+      "sticky": true
+    },
+    "scoring": {
+      "forward_hop": 1,
+      "coin_pickup": 1,
+      "quiz_correct_score": 10,
+      "quiz_correct_coins": 5,
+      "quiz_wrong_score": 0,
+      "quiz_wrong_coins": -3,
+      "combo_streak_threshold": 3,
+      "combo_bonus_score": 20,
+      "combo_bonus_coins": 2,
+      "min_coins": 0
+    },
+    "game_over_conditions": [
+      "truck_hit",
+      "river_fall",
+      "scroll_off_bottom"
+    ],
+    "scroll": {
+      "base_speed_px_per_frame": 1.0,
+      "accel_per_lane": 0.005,
+      "max_speed_px_per_frame": 3.0
+    }
+  },
+  "variants": {
+    "default": {
+      "sky_slot": "bg_sky_day",
+      "math_book_slot": "obj_math_book_building",
+      "truck_color_pool": [
+        "red",
+        "orange",
+        "white"
+      ],
+      "truck_density": 1.0,
+      "log_gap_cells": 3,
+      "question_difficulty": "low",
+      "boss_banner_visible": false,
+      "combo_multiplier": 1.0
+    },
+    "boss": {
+      "sky_slot": "bg_sky_sunset",
+      "math_book_slot": "obj_math_book_boss",
+      "truck_color_pool": [
+        "red",
+        "purple",
+        "dark",
+        "skull"
+      ],
+      "truck_density": 1.5,
+      "log_gap_cells": 2,
+      "question_difficulty": "high",
+      "boss_banner_visible": true,
+      "boss_banner_duration_sec": 2.0,
+      "combo_multiplier": 1.5
+    }
+  },
+  "question_bank": [
+    {
+      "id": "q01",
+      "q": "1/2 + 1/3",
+      "lcd": 6,
+      "answer": "5/6",
+      "choices": [
+        "5/6",
+        "2/5",
+        "1/5",
+        "3/5"
+      ],
+      "answer_index": 0,
+      "difficulty": "low"
+    },
+    {
+      "id": "q02",
+      "q": "1/4 + 2/3",
+      "lcd": 12,
+      "answer": "11/12",
+      "choices": [
+        "11/12",
+        "3/7",
+        "5/12",
+        "7/12"
+      ],
+      "answer_index": 0,
+      "difficulty": "low"
+    },
+    {
+      "id": "q03",
+      "q": "2/3 + 1/4",
+      "lcd": 12,
+      "answer": "11/12",
+      "choices": [
+        "11/12",
+        "3/7",
+        "3/12",
+        "7/12"
+      ],
+      "answer_index": 0,
+      "difficulty": "low"
+    },
+    {
+      "id": "q04",
+      "q": "1/2 + 3/8",
+      "lcd": 8,
+      "answer": "7/8",
+      "choices": [
+        "4/10",
+        "7/8",
+        "5/8",
+        "4/16"
+      ],
+      "answer_index": 1,
+      "difficulty": "low"
+    },
+    {
+      "id": "q05",
+      "q": "5/12 + 1/6",
+      "lcd": 12,
+      "answer": "7/12",
+      "choices": [
+        "6/18",
+        "7/12",
+        "5/18",
+        "6/12"
+      ],
+      "answer_index": 1,
+      "difficulty": "low"
+    },
+    {
+      "id": "q06",
+      "q": "3/4 + 1/6",
+      "lcd": 12,
+      "answer": "11/12",
+      "choices": [
+        "4/10",
+        "11/12",
+        "9/12",
+        "7/10"
+      ],
+      "answer_index": 1,
+      "difficulty": "low"
+    },
+    {
+      "id": "q07",
+      "q": "3/8 + 5/12",
+      "lcd": 24,
+      "answer": "19/24",
+      "choices": [
+        "8/20",
+        "19/24",
+        "15/24",
+        "8/24"
+      ],
+      "answer_index": 1,
+      "difficulty": "high"
+    },
+    {
+      "id": "q08",
+      "q": "3/8 + 1/6",
+      "lcd": 24,
+      "answer": "13/24",
+      "choices": [
+        "4/14",
+        "13/24",
+        "11/24",
+        "4/24"
+      ],
+      "answer_index": 1,
+      "difficulty": "high"
+    },
+    {
+      "id": "q09",
+      "q": "5/8 + 2/3",
+      "lcd": 24,
+      "answer": "31/24",
+      "choices": [
+        "7/11",
+        "31/24",
+        "23/24",
+        "7/24"
+      ],
+      "answer_index": 1,
+      "difficulty": "high"
+    },
+    {
+      "id": "q10",
+      "q": "3/10 + 2/15",
+      "lcd": 30,
+      "answer": "13/30",
+      "choices": [
+        "5/25",
+        "13/30",
+        "11/30",
+        "5/30"
+      ],
+      "answer_index": 1,
+      "difficulty": "high"
+    }
+  ],
+  "learning_goals": [
+    "분모가 다른 두 진분수의 덧셈에서 통분 후 합을 75% 이상 정확도로 구한다.",
+    "주어진 4개 보기 중 통분된 정답을 평균 8초 안에 식별한다.",
+    "LCD ≤ 12 기초 통분과 LCD ≥ 24 응용 통분을 모두 경험한다."
+  ],
+  "difficulty_rule": {
+    "metric": "lcd",
+    "low_threshold_lte": 12,
+    "high_threshold_gte": 24,
+    "comment": "question_bank의 difficulty 필드는 LCD 기준. variants.boss는 difficulty=='high'만 출제."
+  }
+}
