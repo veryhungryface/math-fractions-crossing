@@ -6,7 +6,8 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const config = await fetch('./config.json').then(r => r.json());
+const BUILD_VERSION = 'v6-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
+const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
 const RULES = config.rules;
@@ -1077,6 +1078,14 @@ function startGame() {
 // ============================================================
 // BOOT
 // ============================================================
+// 화면 우하단에 빌드 버전 표시 — 사용자 캐시 확인용
+{
+  const ver = document.createElement('div');
+  ver.textContent = BUILD_VERSION;
+  ver.style.cssText = 'position:fixed;bottom:6px;right:8px;color:rgba(255,255,255,0.4);font-size:10px;font-family:monospace;pointer-events:none;z-index:1000;';
+  document.body.appendChild(ver);
+}
+
 await loadAllTextures();
 
 // 초기 lanes 생성
