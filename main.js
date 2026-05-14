@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v8-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
+const BUILD_VERSION = 'v9-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -58,10 +58,13 @@ scene.add(sun);
 // 카메라 offset (1P 기준)
 // camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
 // Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
-// 정 후방 위에서 내려다보기 (camOffset.x = 0)
-// → 도로 띠가 화면 정수평으로 보이고 트럭 sprite와 정확히 정렬됨
-const CAM_OFFSET = new THREE.Vector3(0, 14, -8);
-const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
+// 1시 방향(NNbE) 위에서 내려다보기 — 사용자 선호
+const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
+const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 3);
+// 카메라가 1시 방향이면 도로 띠가 화면에서 살짝 비스듬해짐 → sprite를 그 각도에 맞춰 회전해야 함
+// 게임 +X 화면 방향 ≈ 화면 left + 위로 약 10.5° 기울어짐
+// sprite material.rotation = -0.183 rad (CW 10.5°)로 sprite long axis를 lane 방향과 정렬
+const SPRITE_ROAD_TILT = -0.183;
 
 function makeCamera(aspect, playerCount) {
   // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
@@ -152,7 +155,7 @@ function flipTexture(tex) {
   return flipped;
 }
 
-function makeSprite(slotId, w, h, flipped = false) {
+function makeSprite(slotId, w, h, flipped = false, opts = {}) {
   let tex = textures[slotId];
   if (!tex) {
     const slot = config.slots[slotId];
@@ -165,6 +168,8 @@ function makeSprite(slotId, w, h, flipped = false) {
     tex = textures[flipKey];
   }
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.15 });
+  // 도로 위 sprite(트럭/뗏목)는 lane 비스듬 방향에 맞게 회전
+  if (opts.roadTilt) mat.rotation = SPRITE_ROAD_TILT;
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(w, h, 1);
   return sprite;
@@ -302,11 +307,8 @@ function spawnLane(z, forceType) {
     for (let i = 0; i < count; i++) {
       const color = pool[Math.floor(state.rng() * pool.length)];
       const slotId = `obj_truck_${color}`;
-      // 트럭 sprite 원본 = "화면 right 향함" (앞머리가 화면 오른쪽).
-      // 게임 +X (dir>0) = 화면 left로 이동 → sprite mirror 필요 (flipped = true)
-      // 게임 -X (dir<0) = 화면 right로 이동 → sprite 그대로 (flipped = false)
       const flipped = dir > 0;
-      const truck = makeSprite(slotId, 1.9, 1.15, flipped);
+      const truck = makeSprite(slotId, 1.9, 1.15, flipped, { roadTilt: true });
       truck.position.set(-CELL_HALF * 0.6 + i * startGap + state.rng() * 1.5, 0.6, z);
       world.add(truck);
       lane.objects.push({ kind: 'truck', mesh: truck, speed, w: 1.9 });
@@ -321,11 +323,11 @@ function spawnLane(z, forceType) {
     const raftGap = state.variant === 'boss' ? 6.0 : 5.0;  // 뗏목 사이 빈 공간 충분히
     const count = Math.ceil(LANE_W / raftGap) + 1;
     const offset0 = state.rng() * raftGap;
-    // PNG는 정사각 1024x1024이고 뗏목이 그 안에 정사각에 가까운 비율로 그려짐
-    // sprite scale을 정사각 비율(2.4 x 2.4)에 가깝게 잡되 시각상 직사각으로 보이게
+    // 뗏목 sprite: 가로 길쭉 (PNG 안에 뗏목이 가로 ≈ 세로 정도이지만 도로 띠 위에 자연스럽게 보이도록)
+    const raftH = raftW * 0.65;
     for (let i = 0; i < count; i++) {
-      const log = makeSprite('obj_log', raftW, raftW);   // 정사각 sprite로 PNG aspect 유지
-      log.position.set(-CELL_HALF - 2 + offset0 + i * raftGap, 0.05, z);
+      const log = makeSprite('obj_log', raftW, raftH, false, { roadTilt: true });
+      log.position.set(-CELL_HALF * 0.6 + offset0 + i * raftGap, 0.1, z);
       world.add(log);
       lane.objects.push({ kind: 'log', mesh: log, speed, w: raftW });
     }
@@ -436,14 +438,16 @@ function rebuildCameras() {
 // screenDx: 화면 기준 좌우 (-1 = 화면 left, +1 = 화면 right) — 사용자 직관 좌표
 // dz: 전진(+1)/후진(-1)
 // 카메라 회전으로 인해 게임 +X는 화면 left이므로, 게임 좌표 dx = -screenDx로 매핑.
+let hopCallCount = 0;
+let hopExecCount = 0;
 function tryHop(p, screenDx, dz) {
+  hopCallCount++;
   if (p.isGameOver) return;
   if (p.isHopping) {
-    // hop 도중 입력은 큐잉 (다음 hop 1개만 기억)
     p.pendingHop = { screenDx, dz };
     return;
   }
-  const gameDx = -screenDx;   // 화면 좌표 → 게임 좌표 부호 반전
+  const gameDx = -screenDx;
   const newX = p.x + gameDx;
   const newLaneIdx = p.laneIndex + (dz > 0 ? 1 : (dz < 0 ? -1 : 0));
   if (Math.abs(newX) > PLAYABLE_HALF) return;
@@ -469,6 +473,7 @@ function tryHop(p, screenDx, dz) {
   p.z = targetLane.z;
   p.isHopping = true;
   p.hopT = 0;
+  hopExecCount++;
   if (dz > 0) {
     p.lanesCrossed = Math.max(p.lanesCrossed, newLaneIdx);
     p.score += 1;
@@ -827,12 +832,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow — lag 있게 해야 player가 화면에서 위로 이동하며 hop 인식
+      // 카메라 follow — 적당 빠르게 (출발 hop이 인식되도록)
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.18;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.18;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.4;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.4;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
@@ -1081,13 +1086,14 @@ function startGame() {
 // ============================================================
 // BOOT
 // ============================================================
-// 화면 우하단에 빌드 버전 표시 — 사용자 캐시 확인용
-{
-  const ver = document.createElement('div');
-  ver.textContent = BUILD_VERSION;
-  ver.style.cssText = 'position:fixed;bottom:6px;right:8px;color:rgba(255,255,255,0.4);font-size:10px;font-family:monospace;pointer-events:none;z-index:1000;';
-  document.body.appendChild(ver);
-}
+// 화면 우하단에 빌드 버전 + hop 카운터 (디버그)
+const debugDiv = document.createElement('div');
+debugDiv.style.cssText = 'position:fixed;bottom:6px;right:8px;color:rgba(255,255,255,0.6);font-size:11px;font-family:monospace;pointer-events:none;z-index:1000;background:rgba(0,0,0,0.4);padding:2px 6px;border-radius:4px;';
+debugDiv.textContent = BUILD_VERSION;
+document.body.appendChild(debugDiv);
+setInterval(() => {
+  debugDiv.textContent = `${BUILD_VERSION} | hop call/exec: ${hopCallCount}/${hopExecCount}`;
+}, 200);
 
 await loadAllTextures();
 
