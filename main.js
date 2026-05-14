@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v13';
+const BUILD_VERSION = 'v14';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -59,9 +59,9 @@ scene.add(sun);
 // camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
 // Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
 // 1시 방향(NNbE) 위에서 내려다보기 — 사용자 선호
-// player가 화면 아래쪽 1/3에 보이도록 lookAhead z 살짝 작게 (player가 hop 후 화면 위로 명확히 이동)
+// player를 화면 아래쪽 1/4 영역에 두고 카메라가 player 즉시 따라감 → hop마다 배경이 1 unit 뒤로 흘러 명확한 전진감
 const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
-const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 2);
+const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
 // 카메라 1시 방향에서 도로 띠가 비스듬 → sprite를 도로 띠 각도에 맞게 회전
 const SPRITE_ROAD_TILT = -0.30;   // 17° CW (시각 강화)
 
@@ -176,99 +176,207 @@ function makeSprite(slotId, w, h, flipped = false, opts = {}) {
 // VOXEL VEHICLE / RAFT — BoxGeometry로 진짜 3D voxel 조합
 // 도로 띠(X축)와 자동 정렬됨
 // ============================================================
-const TRUCK_COLORS = {
-  red:    { body: 0xD33A2E, dark: 0x8C1C12, light: 0xED5044 },
-  orange: { body: 0xE89132, dark: 0x9B5C18, light: 0xFFAA4A },
-  white:  { body: 0xEEEEEE, dark: 0xAAAAAA, light: 0xFFFFFF },
-  purple: { body: 0x7E4BB5, dark: 0x4D2A7A, light: 0x9763C9 },
-  dark:   { body: 0x2D2438, dark: 0x14101D, light: 0x4A3F5C },
-  skull:  { body: 0x1F1A26, dark: 0x0E0B14, light: 0x3A3242 },
+// 자동차 색상 팔레트 — 본체 / 어두운 톤 / 밝은 톤 / 액센트
+const CAR_PALETTE = {
+  red:    { body: 0xE74C3C, dark: 0xA82820, light: 0xFF6B5B, accent: 0xFFFFFF },
+  orange: { body: 0xF39C12, dark: 0xA56A0A, light: 0xFFB744, accent: 0xFFFFFF },
+  white:  { body: 0xF5F5F5, dark: 0xB8B8B8, light: 0xFFFFFF, accent: 0x4A90E2 },
+  purple: { body: 0x9B59B6, dark: 0x5D2E73, light: 0xC084DC, accent: 0xFFE34A },
+  dark:   { body: 0x34495E, dark: 0x1A252F, light: 0x5C7C95, accent: 0xFFAA00 },
+  skull:  { body: 0x2C2C36, dark: 0x121218, light: 0x5C5C66, accent: 0xFFFFFF },
 };
 
-function makeVoxelTruck(color, dir) {
-  const c = TRUCK_COLORS[color] || TRUCK_COLORS.red;
+// 자동차 변형: 'truck' (화물트럭), 'van' (밴), 'sedan' (세단), 'pickup' (픽업)
+function makeVoxelCar(color, dir, variant = 'truck') {
+  const c = CAR_PALETTE[color] || CAR_PALETTE.red;
   const group = new THREE.Group();
-
-  // 본체 화물칸 (X축 long, 뒤쪽)
-  const bodyGeo = new THREE.BoxGeometry(1.2, 0.85, 0.85);
   const bodyMat = new THREE.MeshLambertMaterial({ color: c.body });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.set(-0.4, 0.55, 0);
-  group.add(body);
+  const lightTopMat = new THREE.MeshLambertMaterial({ color: c.light });
+  const darkMat = new THREE.MeshLambertMaterial({ color: c.dark });
+  const winMat = new THREE.MeshLambertMaterial({ color: 0x2A3A4A });
+  const tireMat = new THREE.MeshLambertMaterial({ color: 0x18181C });
+  const rimMat  = new THREE.MeshLambertMaterial({ color: 0x6E6E78 });
+  const headMat = new THREE.MeshLambertMaterial({ color: 0xFFF1A0, emissive: 0xFFE34A, emissiveIntensity: 0.5 });
+  const tailMat = new THREE.MeshLambertMaterial({ color: 0xD81818, emissive: 0xC00000, emissiveIntensity: 0.4 });
 
-  // 운전석 캐빈 (앞쪽, 살짝 작게)
-  const cabinGeo = new THREE.BoxGeometry(0.7, 0.65, 0.8);
-  const cabin = new THREE.Mesh(cabinGeo, bodyMat);
-  cabin.position.set(0.55, 0.45, 0);
-  group.add(cabin);
-
-  // 운전석 윗면 약간 어두운 톤
-  const cabinTopGeo = new THREE.BoxGeometry(0.7, 0.1, 0.8);
-  const cabinTop = new THREE.Mesh(cabinTopGeo, new THREE.MeshLambertMaterial({ color: c.light }));
-  cabinTop.position.set(0.55, 0.83, 0);
-  group.add(cabinTop);
-
-  // 창문 (앞 유리)
-  const winGeo = new THREE.BoxGeometry(0.1, 0.3, 0.62);
-  const winMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
-  const win = new THREE.Mesh(winGeo, winMat);
-  win.position.set(0.92, 0.5, 0);
-  group.add(win);
-
-  // 옆 창문 (큰)
-  const sideWinGeo = new THREE.BoxGeometry(0.5, 0.3, 0.05);
-  for (const z of [0.42, -0.42]) {
-    const sw = new THREE.Mesh(sideWinGeo, winMat);
-    sw.position.set(0.55, 0.5, z);
-    group.add(sw);
+  // 바퀴 4개 (공통) — 타이어 + 휠캡
+  function addWheel(x, z) {
+    const tireGeo = new THREE.BoxGeometry(0.32, 0.32, 0.18);
+    const tire = new THREE.Mesh(tireGeo, tireMat);
+    tire.position.set(x, 0.16, z);
+    group.add(tire);
+    const rimGeo = new THREE.BoxGeometry(0.16, 0.16, 0.2);
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.position.set(x, 0.16, z);
+    group.add(rim);
   }
+  addWheel(-0.65, 0.42); addWheel(-0.65, -0.42);
+  addWheel(0.55, 0.42);  addWheel(0.55, -0.42);
 
-  // 헤드라이트
-  const headGeo = new THREE.BoxGeometry(0.08, 0.18, 0.18);
-  const headMat = new THREE.MeshLambertMaterial({ color: 0xFFE34A, emissive: 0xFFD23A, emissiveIntensity: 0.4 });
-  for (const z of [0.28, -0.28]) {
-    const h = new THREE.Mesh(headGeo, headMat);
-    h.position.set(0.97, 0.32, z);
-    group.add(h);
-  }
-
-  // 후미등
-  const tailGeo = new THREE.BoxGeometry(0.06, 0.15, 0.15);
-  const tailMat = new THREE.MeshLambertMaterial({ color: 0xC00, emissive: 0xC00, emissiveIntensity: 0.3 });
-  for (const z of [0.32, -0.32]) {
-    const t = new THREE.Mesh(tailGeo, tailMat);
-    t.position.set(-1.0, 0.6, z);
-    group.add(t);
-  }
-
-  // 바퀴 4개
-  const wheelGeo = new THREE.BoxGeometry(0.28, 0.3, 0.18);
-  const wheelMat = new THREE.MeshLambertMaterial({ color: 0x141414 });
-  const wheelXs = [-0.7, 0.5];
-  for (const x of wheelXs) {
+  if (variant === 'truck') {
+    // 화물 트럭 — 캐빈 + 큰 화물칸
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.95, 0.88), bodyMat);
+    body.position.set(-0.42, 0.6, 0); group.add(body);
+    // 화물칸 옆면 패널 라인
+    const panelMat = new THREE.MeshLambertMaterial({ color: c.dark });
+    for (const z of [0.45, -0.45]) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.04, 0.03), panelMat);
+      panel.position.set(-0.42, 0.6, z); group.add(panel);
+    }
+    // 캐빈
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.7, 0.82), bodyMat);
+    cabin.position.set(0.6, 0.475, 0); group.add(cabin);
+    // 캐빈 윗면 (밝은 톤)
+    const cabinTop = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.08, 0.84), lightTopMat);
+    cabinTop.position.set(0.6, 0.86, 0); group.add(cabinTop);
+    // 앞유리
+    const win = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.65), winMat);
+    win.position.set(0.99, 0.55, 0); group.add(win);
+    // 옆 창문
     for (const z of [0.42, -0.42]) {
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.position.set(x, 0.18, z);
-      group.add(w);
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.3, 0.04), winMat);
+      sw.position.set(0.6, 0.55, z); group.add(sw);
     }
+    // 헤드라이트 2
+    for (const z of [0.3, -0.3]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.16), headMat);
+      h.position.set(1.02, 0.32, z); group.add(h);
+    }
+    // 라디에이터 그릴
+    const grill = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.18, 0.4), darkMat);
+    grill.position.set(1.02, 0.18, 0); group.add(grill);
+    // 뒤 후미등
+    for (const z of [0.32, -0.32]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.14), tailMat);
+      t.position.set(-1.07, 0.7, z); group.add(t);
+    }
+    // 캐빈 위 안테나
+    const ant = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.25, 0.04), darkMat);
+    ant.position.set(0.4, 1.05, 0.3); group.add(ant);
   }
-
-  // skull 트럭은 옆면에 작은 흰 십자 표시
-  if (color === 'skull') {
-    const skullGeo = new THREE.BoxGeometry(0.05, 0.18, 0.18);
-    const skullMat = new THREE.MeshLambertMaterial({ color: 0xFFFFFF });
+  else if (variant === 'van') {
+    // 밴 (둥근 단일 몸체)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.85, 0.85), bodyMat);
+    body.position.set(0, 0.55, 0); group.add(body);
+    // 윗면 둥근 효과 (윗부분 약간 작은 박스)
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.18, 0.78), lightTopMat);
+    top.position.set(0, 1.02, 0); group.add(top);
+    // 앞유리
+    const fw = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.3, 0.65), winMat);
+    fw.position.set(0.93, 0.7, 0); group.add(fw);
+    // 옆 창문 (길게)
+    for (const z of [0.43, -0.43]) {
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 0.04), winMat);
+      sw.position.set(-0.05, 0.78, z); group.add(sw);
+    }
+    // 헤드라이트
+    for (const z of [0.3, -0.3]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.14), headMat);
+      h.position.set(0.98, 0.4, z); group.add(h);
+    }
+    // 후미등
+    for (const z of [0.32, -0.32]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.14), tailMat);
+      t.position.set(-0.97, 0.55, z); group.add(t);
+    }
+    // 측면 액센트 라인
     for (const z of [0.44, -0.44]) {
-      const s = new THREE.Mesh(skullGeo, skullMat);
-      s.position.set(-0.4, 0.55, z);
-      group.add(s);
+      const line = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.06, 0.02), new THREE.MeshLambertMaterial({ color: c.accent }));
+      line.position.set(0, 0.4, z); group.add(line);
+    }
+  }
+  else if (variant === 'sedan') {
+    // 세단 (낮고 길쭉)
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.4, 0.85), bodyMat);
+    lower.position.set(0, 0.4, 0); group.add(lower);
+    // 캐빈 (윗부분)
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.4, 0.78), bodyMat);
+    cabin.position.set(-0.05, 0.78, 0); group.add(cabin);
+    // 윗면 톤
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.72), lightTopMat);
+    top.position.set(-0.05, 1.02, 0); group.add(top);
+    // 앞유리 (경사)
+    const fw = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.32, 0.62), winMat);
+    fw.position.set(0.65, 0.78, 0); group.add(fw);
+    // 뒷유리
+    const rw = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.32, 0.62), winMat);
+    rw.position.set(-0.7, 0.78, 0); group.add(rw);
+    // 옆 창문
+    for (const z of [0.4, -0.4]) {
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.28, 0.03), winMat);
+      sw.position.set(-0.05, 0.8, z); group.add(sw);
+    }
+    // 헤드라이트
+    for (const z of [0.3, -0.3]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.16), headMat);
+      h.position.set(1.03, 0.38, z); group.add(h);
+    }
+    // 후미등
+    for (const z of [0.32, -0.32]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.14), tailMat);
+      t.position.set(-1.03, 0.42, z); group.add(t);
+    }
+    // 측면 도어 라인
+    for (const z of [0.43, -0.43]) {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.3, 0.02), darkMat);
+      door.position.set(0.1, 0.42, z); group.add(door);
+    }
+  }
+  else if (variant === 'pickup') {
+    // 픽업 트럭 (캐빈 + 짧은 짐칸)
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.75, 0.85), bodyMat);
+    cabin.position.set(0.5, 0.5, 0); group.add(cabin);
+    const cabinTop = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.08, 0.88), lightTopMat);
+    cabinTop.position.set(0.5, 0.92, 0); group.add(cabinTop);
+    // 짐칸 (낮음)
+    const bed = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.38, 0.85), bodyMat);
+    bed.position.set(-0.5, 0.32, 0); group.add(bed);
+    // 짐칸 테두리
+    const bedTopMat = new THREE.MeshLambertMaterial({ color: c.dark });
+    for (const z of [0.42, -0.42]) {
+      const e = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.04), bedTopMat);
+      e.position.set(-0.5, 0.52, z); group.add(e);
+    }
+    // 앞유리
+    const fw = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.32, 0.65), winMat);
+    fw.position.set(0.96, 0.6, 0); group.add(fw);
+    // 옆 창문
+    for (const z of [0.43, -0.43]) {
+      const sw = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.3, 0.03), winMat);
+      sw.position.set(0.5, 0.6, z); group.add(sw);
+    }
+    // 헤드라이트
+    for (const z of [0.3, -0.3]) {
+      const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.14, 0.14), headMat);
+      h.position.set(1.01, 0.4, z); group.add(h);
+    }
+    // 후미등
+    for (const z of [0.32, -0.32]) {
+      const t = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.1, 0.12), tailMat);
+      t.position.set(-1.01, 0.32, z); group.add(t);
     }
   }
 
-  // dir에 따라 자동차 방향 회전 (앞머리가 진행 방향)
-  // dir > 0 (게임 +X 이동) → 앞머리 +X 그대로. dir < 0 → 180° 회전 (앞머리 -X).
-  if (dir < 0) group.rotation.y = Math.PI;
+  // skull variant 추가 마크
+  if (color === 'skull') {
+    for (const z of [0.46, -0.46]) {
+      const skull = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.16, 0.16),
+        new THREE.MeshLambertMaterial({ color: 0xFFFFFF }));
+      skull.position.set(-0.3, 0.55, z); group.add(skull);
+    }
+  }
 
+  // 진행 방향 (앞머리)이 dir 방향 향하게
+  if (dir < 0) group.rotation.y = Math.PI;
   return group;
+}
+
+// 호환 위한 alias (기존 코드에서 호출하는 makeVoxelTruck)
+const TRUCK_VARIANTS = ['truck', 'van', 'sedan', 'pickup'];
+function makeVoxelTruck(color, dir) {
+  // 차종 랜덤 (visual 다양화)
+  const variant = TRUCK_VARIANTS[Math.floor(Math.random() * TRUCK_VARIANTS.length)];
+  return makeVoxelCar(color, dir, variant);
 }
 
 function makeVoxelRaft(w) {
@@ -923,7 +1031,7 @@ function tick() {
       if (p.isHopping) {
         p.hopT += dt;
         const t = Math.min(1, p.hopT / p.hopDur);
-        p.yOffset = Math.sin(t * Math.PI) * 1.0;     // 점프 호 더 큼 (hop 인식)
+        p.yOffset = Math.sin(t * Math.PI) * 1.0;
         const fx = p.hopFrom.x, fz = p.hopFrom.z;
         const tx = p.hopTo.x, tz = p.hopTo.z;
         p.x = fx + (tx - fx) * t;
@@ -931,7 +1039,6 @@ function tick() {
         if (t >= 1) {
           p.x = tx; p.z = tz; p.isHopping = false; p.yOffset = 0;
           onLandOnLane(p);
-          // 큐잉된 다음 hop 즉시 실행
           if (p.pendingHop && !p.isGameOver) {
             const q = p.pendingHop;
             p.pendingHop = null;
@@ -939,6 +1046,16 @@ function tick() {
           }
         }
         updatePlayerSprite(p);
+        // 트럭 충돌 검사 — hop 도중에도 (목표 lane이 도로면 진입 도중에도 트럭에 부딪힘)
+        const targetLane = lanes[p.laneIndex];
+        if (targetLane && targetLane.type === 'road') {
+          for (const obj of targetLane.objects) {
+            if (obj.kind === 'truck' && Math.abs(obj.mesh.position.x - p.x) < 1.0) {
+              endPlayer(p, 'truck_hit');
+              break;
+            }
+          }
+        }
       } else {
         // 뗏목 위에서 같이 이동 + 매 프레임 검증 (뗏목 wrap 시 떨어짐 감지)
         if (p.onLog) {
@@ -953,25 +1070,24 @@ function tick() {
         }
         updatePlayerSprite(p);
 
-        // 트럭 충돌
+        // 트럭 충돌 — idle 상태에서도 매 프레임
         const lane = lanes[p.laneIndex];
         if (lane && lane.type === 'road') {
           for (const obj of lane.objects) {
-            if (obj.kind === 'truck') {
-              if (Math.abs(obj.mesh.position.x - p.x) < (obj.w / 2 + 0.35)) {
-                endPlayer(p, 'truck_hit');
-              }
+            if (obj.kind === 'truck' && Math.abs(obj.mesh.position.x - p.x) < 1.1) {
+              endPlayer(p, 'truck_hit');
+              break;
             }
           }
         }
       }
 
-      // 카메라 follow — lag 적당히 → player가 hop마다 화면에서 위로 명확히 이동
+      // 카메라 follow — 거의 즉시(snap)로 player 따라감. player는 화면 같은 위치 유지, 배경이 흘러가서 전진감 표현
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.2;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.2;
+        p.camera.position.x = tX;
+        p.camera.position.z = tZ;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
