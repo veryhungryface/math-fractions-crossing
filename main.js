@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v11-voxel-3d';
+const BUILD_VERSION = 'v12';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -477,7 +477,7 @@ function makePlayer(idx, startX) {
     yOffset: 0,
     isHopping: false,
     hopT: 0,
-    hopDur: 0.14,            // 더 빠른 hop
+    hopDur: 0.11,            // 즉각 반응
     hopFrom: null,
     hopTo: null,
     onLog: null,
@@ -551,8 +551,10 @@ function updatePlayerSprite(p) {
 function rebuildCameras() {
   const w = window.innerWidth;
   const h = window.innerHeight;
-  const subW = w / state.playerCount;
-  const aspect = subW / h;
+  const { cols, rows } = splitLayout(state.playerCount);
+  const subW = w / cols;
+  const subH = h / rows;
+  const aspect = subW / subH;
   for (const p of players) {
     p.camera = makeCamera(aspect, state.playerCount);
   }
@@ -920,7 +922,7 @@ function tick() {
       if (p.isHopping) {
         p.hopT += dt;
         const t = Math.min(1, p.hopT / p.hopDur);
-        p.yOffset = Math.sin(t * Math.PI) * 0.85;     // 점프 호 크게 (hop 명확)
+        p.yOffset = Math.sin(t * Math.PI) * 1.0;     // 점프 호 더 큼 (hop 인식)
         const fx = p.hopFrom.x, fz = p.hopFrom.z;
         const tx = p.hopTo.x, tz = p.hopTo.z;
         p.x = fx + (tx - fx) * t;
@@ -937,9 +939,15 @@ function tick() {
         }
         updatePlayerSprite(p);
       } else {
-        // 뗏목 위에서 같이 이동
+        // 뗏목 위에서 같이 이동 + 매 프레임 검증 (뗏목 wrap 시 떨어짐 감지)
         if (p.onLog) {
           p.x += p.onLog.speed * dt;
+          // 뗏목 wrap되거나 빠르게 멀어지면 강에 빠짐
+          if (Math.abs(p.onLog.mesh.position.x - p.x) > p.onLog.w / 2 + 0.1) {
+            p.onLog = null;
+            endPlayer(p, 'river_fall');
+            continue;
+          }
           if (Math.abs(p.x) > PLAYABLE_HALF + 0.5) endPlayer(p, 'river_fall');
         }
         updatePlayerSprite(p);
@@ -957,12 +965,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow — 적당 빠르게 (출발 hop이 인식되도록)
+      // 카메라 follow — 즉시 따라가도록 (출발 hop이 화면에 즉시 반영)
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.4;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.4;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.7;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.7;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
@@ -1017,6 +1025,15 @@ function tick() {
   renderSplit();
 }
 
+// 분할 layout: 각 P의 viewport가 16:9에 가까운 직사각이도록
+// 1P: 1x1 (전체), 2P: 1x2 가로, 3P: 1x3 가로, 4P: 2x2 그리드
+function splitLayout(count) {
+  if (count <= 1) return { cols: 1, rows: 1 };
+  if (count === 2) return { cols: 2, rows: 1 };
+  if (count === 3) return { cols: 3, rows: 1 };
+  return { cols: 2, rows: 2 };
+}
+
 function renderSplit() {
   const w = window.innerWidth;
   const h = window.innerHeight;
@@ -1026,25 +1043,34 @@ function renderSplit() {
     if (players[0]) renderer.render(scene, players[0].camera);
     return;
   }
-  const subW = Math.floor(w / state.playerCount);
-  // 분할 렌더: 자기 P의 닭만 보이게, 다른 P는 임시 숨김
+  const { cols, rows } = splitLayout(state.playerCount);
+  const subW = Math.floor(w / cols);
+  const subH = Math.floor(h / rows);
+  // 자기 P의 닭만 보이게
   const backup = players.map(p => p.currentSprite ? p.currentSprite.visible : null);
   for (let i = 0; i < state.playerCount; i++) {
     for (let j = 0; j < state.playerCount; j++) {
       if (players[j].currentSprite) {
         players[j].currentSprite.visible = (i === j) ? backup[j] : false;
       }
+      if (players[j].shadow) {
+        players[j].shadow.visible = (i === j);
+      }
     }
-    const x0 = i * subW;
-    const ww = (i === state.playerCount - 1) ? (w - x0) : subW;
-    renderer.setViewport(x0, 0, ww, h);
-    renderer.setScissor(x0, 0, ww, h);
+    const cx = i % cols;
+    const cy = Math.floor(i / cols);
+    const x0 = cx * subW;
+    // WebGL viewport y는 아래에서 위. CSS는 위에서 아래. 변환.
+    const y0 = (rows - 1 - cy) * subH;
+    renderer.setViewport(x0, y0, subW, subH);
+    renderer.setScissor(x0, y0, subW, subH);
     renderer.setScissorTest(true);
     renderer.render(scene, players[i].camera);
   }
   // 복원
   for (let j = 0; j < state.playerCount; j++) {
     if (players[j].currentSprite) players[j].currentSprite.visible = backup[j];
+    if (players[j].shadow) players[j].shadow.visible = true;
   }
 }
 
