@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v7-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
+const BUILD_VERSION = 'v8-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -58,9 +58,10 @@ scene.add(sun);
 // 카메라 offset (1P 기준)
 // camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
 // Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
-// player가 화면 아래쪽에 보이도록 lookAhead z를 더 멀리 두기 → hop 시 player가 화면 위로 명확히 이동
-const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
-const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 6);
+// 정 후방 위에서 내려다보기 (camOffset.x = 0)
+// → 도로 띠가 화면 정수평으로 보이고 트럭 sprite와 정확히 정렬됨
+const CAM_OFFSET = new THREE.Vector3(0, 14, -8);
+const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
 
 function makeCamera(aspect, playerCount) {
   // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
@@ -789,7 +790,7 @@ function tick() {
       if (p.isHopping) {
         p.hopT += dt;
         const t = Math.min(1, p.hopT / p.hopDur);
-        p.yOffset = Math.sin(t * Math.PI) * 0.55;     // 점프 호 키움 (시각 명확)
+        p.yOffset = Math.sin(t * Math.PI) * 0.85;     // 점프 호 크게 (hop 명확)
         const fx = p.hopFrom.x, fz = p.hopFrom.z;
         const tx = p.hopTo.x, tz = p.hopTo.z;
         p.x = fx + (tx - fx) * t;
@@ -826,12 +827,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow (각 P별) — 첫 hop도 즉시 반영되도록 lerp 강하게
+      // 카메라 follow — lag 있게 해야 player가 화면에서 위로 이동하며 hop 인식
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.55;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.55;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.18;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.18;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
