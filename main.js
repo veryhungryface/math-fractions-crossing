@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v12';
+const BUILD_VERSION = 'v13';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -59,8 +59,9 @@ scene.add(sun);
 // camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
 // Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
 // 1시 방향(NNbE) 위에서 내려다보기 — 사용자 선호
+// player가 화면 아래쪽 1/3에 보이도록 lookAhead z 살짝 작게 (player가 hop 후 화면 위로 명확히 이동)
 const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
-const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 3);
+const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 2);
 // 카메라 1시 방향에서 도로 띠가 비스듬 → sprite를 도로 띠 각도에 맞게 회전
 const SPRITE_ROAD_TILT = -0.30;   // 17° CW (시각 강화)
 
@@ -477,7 +478,7 @@ function makePlayer(idx, startX) {
     yOffset: 0,
     isHopping: false,
     hopT: 0,
-    hopDur: 0.11,            // 즉각 반응
+    hopDur: 0.16,            // hop 보간 시간 (시각 인식)
     hopFrom: null,
     hopTo: null,
     onLog: null,
@@ -965,12 +966,12 @@ function tick() {
         }
       }
 
-      // 카메라 follow — 즉시 따라가도록 (출발 hop이 화면에 즉시 반영)
+      // 카메라 follow — lag 적당히 → player가 hop마다 화면에서 위로 명확히 이동
       if (p.camera) {
         const tX = p.x + CAM_OFFSET.x;
         const tZ = p.z + CAM_OFFSET.z;
-        p.camera.position.x += (tX - p.camera.position.x) * 0.7;
-        p.camera.position.z += (tZ - p.camera.position.z) * 0.7;
+        p.camera.position.x += (tX - p.camera.position.x) * 0.2;
+        p.camera.position.z += (tZ - p.camera.position.z) * 0.2;
         p.camera.position.y = CAM_OFFSET.y;
         const f = p.camera.userData.forwardOffset;
         p.camera.lookAt(
