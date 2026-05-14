@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v9-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
+const BUILD_VERSION = 'v10-2026.05.14';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -61,10 +61,8 @@ scene.add(sun);
 // 1시 방향(NNbE) 위에서 내려다보기 — 사용자 선호
 const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
 const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 3);
-// 카메라가 1시 방향이면 도로 띠가 화면에서 살짝 비스듬해짐 → sprite를 그 각도에 맞춰 회전해야 함
-// 게임 +X 화면 방향 ≈ 화면 left + 위로 약 10.5° 기울어짐
-// sprite material.rotation = -0.183 rad (CW 10.5°)로 sprite long axis를 lane 방향과 정렬
-const SPRITE_ROAD_TILT = -0.183;
+// 카메라 1시 방향에서 도로 띠가 비스듬 → sprite를 도로 띠 각도에 맞게 회전
+const SPRITE_ROAD_TILT = -0.30;   // 17° CW (시각 강화)
 
 function makeCamera(aspect, playerCount) {
   // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
@@ -255,16 +253,17 @@ function spawnLane(z, forceType) {
       world.add(book);
       lane.book = { mesh: book, slot: slotId };
       lane.isBuildingLane = true;
-      // 강한 통로 강제: 책(cx=0) 양옆 모든 칸(cx=±1..±6)을 나무로 막음 → 책만 통과 가능
+      // 책 입구 강조: 책 정면(cx=-1, 0, +1) 3칸은 비우고, 양 끝(cx=±2..±6)만 나무로 막음
+      // → 시각상 막다른 길로 보이지 않고, 책 정면 통로가 자연스럽게 보임
+      // 책은 cx=0에 있어 cx=±1로 우회 가능하지만 책을 자주 지나가도록 유도
       for (let cx = -6; cx <= 6; cx++) {
-        if (cx === 0) continue;  // 책 위치만 비움
+        if (Math.abs(cx) < 2) continue;  // cx=-1, 0, +1 통로
         const tree = makeSprite('obj_tree', 1.7, 2.1);
         tree.position.set(cx, 1.05, z);
         world.add(tree);
         lane.decorations.push({ mesh: tree, cx });
         lane.blockedCells.add(cx);
       }
-      // 책 진입은 cx=0만 가능 (퀴즈 트리거)
     } else {
       // 일반 잔디 — 나무/덤불 무작위
       for (let cx = -6; cx <= 6; cx++) {
@@ -777,12 +776,11 @@ function tick() {
   requestAnimationFrame(tick);
 
   if (state.mode === 'play') {
-    // 트럭/뗏목 wrap — 강 경계 안쪽에서 wrap (뗏목 끝이 lane 끝과 거의 일치)
+    // 트럭/뗏목 wrap — 뗏목 끝이 강 lane 끝 안쪽까지만. 잔디로 침범 방지.
     for (const lane of lanes) {
       for (const obj of lane.objects) {
         obj.mesh.position.x += obj.speed * dt;
-        // 뗏목 끝(obj.w/2)이 lane 끝(CELL_HALF)에서 살짝 안쪽까지만 보이게
-        const wrapLimit = CELL_HALF - obj.w / 2 + 0.4;
+        const wrapLimit = CELL_HALF - obj.w / 2 - 0.1;   // lane 안쪽 0.1 unit 여유
         if (obj.mesh.position.x > wrapLimit) obj.mesh.position.x = -wrapLimit;
         if (obj.mesh.position.x < -wrapLimit) obj.mesh.position.x = wrapLimit;
       }
