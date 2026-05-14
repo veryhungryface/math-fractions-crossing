@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v14';
+const BUILD_VERSION = 'v15';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -980,18 +980,38 @@ function endPlayer(p, reason) {
   if (p.isGameOver) return;
   p.isGameOver = true;
   p.gameOverReason = reason;
-  // 모든 P가 끝나면 결과 화면
+  // hop 도중 죽으면 hop 강제 종료 (마지막 위치 고정)
+  p.isHopping = false;
+  p.pendingHop = null;
+  if (p.shadow) p.shadow.material.opacity = 0;
+  // 다른 P 모두 끝났으면 결과 화면. 1인 모드면 즉시.
   if (players.every(pp => pp.isGameOver)) {
     showResult();
+  } else if (state.playerCount > 1) {
+    // 다인 모드에서 한 명 죽으면 그 P 화면에 'GAME OVER' 표시 (다른 P는 계속)
+    if (p.sprites && p.sprites.idle) {
+      // 캐릭터 회색조 처리 (사라지지 않음)
+      Object.values(p.sprites).forEach(sp => {
+        if (sp.material) sp.material.opacity = 0.3;
+      });
+    }
   }
 }
 
 function showResult() {
   state.mode = 'result';
-  // 점수 기준 ranking
   const ranked = [...players].sort((a, b) => b.score - a.score);
   const winner = ranked[0];
-  document.getElementById('result-title').textContent = state.playerCount === 1 ? '게임 종료' : `🏆 ${PLAYER_NAMES[winner.index]} 승리!`;
+  const reasonText = ({
+    truck_hit: '🚛 자동차에 부딪혔어요',
+    river_fall: '💧 강에 빠졌어요',
+    scroll_off_bottom: '⏰ 너무 느렸어요',
+  })[winner.gameOverReason] || '게임 종료';
+  document.getElementById('result-title').textContent =
+    state.playerCount === 1 ? `${reasonText}` : `🏆 ${PLAYER_NAMES[winner.index]} 승리!`;
+  // result-reason 별도 텍스트 (sub)
+  const sub = document.getElementById('result-reason');
+  if (sub) sub.textContent = state.playerCount === 1 ? '다시 도전해보세요!' : reasonText;
   const tbody = document.getElementById('result-table-body');
   tbody.innerHTML = '';
   ranked.forEach(p => {
@@ -1001,7 +1021,10 @@ function showResult() {
       <td>${p.score}</td><td>${p.coins}</td><td>${p.lanesCrossed}</td><td>${acc}%</td>`;
     tbody.appendChild(tr);
   });
-  document.getElementById('result').classList.remove('hide');
+  // 명시적으로 표시 (display:flex 강제)
+  const resultEl = document.getElementById('result');
+  resultEl.classList.remove('hide');
+  resultEl.style.display = 'flex';
 }
 
 // ============================================================
