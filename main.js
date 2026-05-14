@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v16';
+const BUILD_VERSION = 'v17';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -14,9 +14,10 @@ const RULES = config.rules;
 
 const CELL = 1;
 const PLAYABLE_HALF = 6;            // hop 가능 좌우 범위 (-6..+6)
-const LANE_W = PLAYABLE_HALF * 2 + 1.0;  // 13 — hop 범위와 거의 일치
-const CELL_HALF = LANE_W * 0.5;
-const LANE_VISUAL_PAD = 0.6;         // 뗏목/트럭 wrap 시각 여유
+const LANE_W = 30;                   // 시각 lane 너비 — 화면을 가득 채우고 양옆 시각 벽
+const CELL_HALF = LANE_W * 0.5;     // 15
+const VISUAL_WALL_START = PLAYABLE_HALF + 0.5;  // cx > 6.5는 시각 벽 영역
+const LANE_VISUAL_PAD = 0.6;
 const BOSS_SCORE_GTE = RULES.boss_trigger.score_gte;
 const BOSS_LANES_GTE = RULES.boss_trigger.lanes_crossed_gte;
 const BUILDING_INTERVAL = RULES.building_interval_lanes;
@@ -66,14 +67,8 @@ const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
 const SPRITE_ROAD_TILT = -0.30;   // 17° CW (시각 강화)
 
 function makeCamera(aspect, playerCount) {
-  // viewSize는 화면 세로 단위. ortho 가로 = viewSize * aspect.
-  // 화면 가로에 lane(13 unit)이 가득 차도록: viewSize * aspect ≈ 13 + 여유
-  // 따라서 viewSize ≈ (13 + 1) / aspect = 14 / aspect 가 최적
-  const targetWidth = 14;  // lane 13 + 여유 1 unit
-  let viewSize = targetWidth / Math.max(aspect, 0.4);
-  // 너무 크면 화면이 멀어 보이고, 너무 작으면 작아 보임. 적정 범위로 클램프.
-  viewSize = Math.max(10, Math.min(viewSize, 18));
-
+  // viewSize 고정 13 — 모든 화면이 같은 zoom level. lane은 30 unit이므로 항상 가득 차고 양 끝은 시각 벽으로 채워짐
+  const viewSize = 13;
   const c = new THREE.OrthographicCamera(
     -viewSize * aspect / 2, viewSize * aspect / 2,
     viewSize / 2, -viewSize / 2,
@@ -427,23 +422,45 @@ function laneColor(type) {
   return 0xaaaaaa;
 }
 
+// 난이도 곡선: lane index에 따라 lane type 분포 + 트럭 수/속도 변화
+function laneDifficulty(laneIdx) {
+  if (laneIdx < 5)  return { grass: 1.00, road: 0.00, river: 0.00, truckCount: 1, truckSpeed: 0.9 };
+  if (laneIdx < 12) return { grass: 0.70, road: 0.25, river: 0.05, truckCount: 1, truckSpeed: 1.1 };
+  if (laneIdx < 22) return { grass: 0.55, road: 0.30, river: 0.15, truckCount: 1.5, truckSpeed: 1.5 };
+  if (laneIdx < 35) return { grass: 0.45, road: 0.35, river: 0.20, truckCount: 2, truckSpeed: 1.8 };
+  return { grass: 0.35, road: 0.40, river: 0.25, truckCount: 2.5, truckSpeed: 2.2 };
+}
+
 function spawnLane(z, forceType) {
+  const laneIndex = lanes.length;
+  const diff = laneDifficulty(laneIndex);
   let type = forceType;
   if (!type) {
     const r = state.rng();
-    if (state.variant === 'boss') {
-      type = r < 0.32 ? 'grass' : (r < 0.7 ? 'road' : 'river');
-    } else {
-      type = r < 0.48 ? 'grass' : (r < 0.78 ? 'road' : 'river');
-    }
+    if (r < diff.grass) type = 'grass';
+    else if (r < diff.grass + diff.road) type = 'road';
+    else type = 'river';
   }
-  const laneIndex = lanes.length;
 
+  // lane 전체 너비 (LANE_W=30) — 화면 가득 채움
   const geom = new THREE.BoxGeometry(LANE_W, 0.2, CELL);
   const mat = new THREE.MeshLambertMaterial({ color: laneColor(type) });
   const mesh = new THREE.Mesh(geom, mat);
   mesh.position.set(0, -0.1, z);
   world.add(mesh);
+
+  // 양 끝 시각 벽 영역(잔디 띠) — 도로/강 lane에서도 양 끝은 잔디색
+  // → "차로/강으로 갈 수 있어 보이지만 못 가는" 인식 제거
+  if (type === 'road' || type === 'river') {
+    const sideW = CELL_HALF - PLAYABLE_HALF - 0.3;
+    const sideGeo = new THREE.BoxGeometry(sideW, 0.22, CELL);
+    const sideMat = new THREE.MeshLambertMaterial({ color: 0x9CCD5E });
+    for (const dirSign of [1, -1]) {
+      const sg = new THREE.Mesh(sideGeo, sideMat);
+      sg.position.set(dirSign * (PLAYABLE_HALF + 0.3 + sideW / 2), -0.06, z);
+      world.add(sg);
+    }
+  }
 
   if (type === 'road') {
     // 차선 (점선) — voxel cube로
@@ -479,23 +496,35 @@ function spawnLane(z, forceType) {
 
   const lane = { z, type, mesh, index: laneIndex, objects: [], decorations: [], blockedCells: new Set() };
 
+  // 양옆 시각 벽 — PLAYABLE 영역 너머 (cx > 6.5 또는 < -6.5)에 큰 나무 빽빽 배치
+  // 화면 가장자리까지 lane이 채워져 보임. scene.background 안 보임.
+  function addVisualWall(z) {
+    for (let cx = Math.ceil(VISUAL_WALL_START); cx <= CELL_HALF - 1; cx++) {
+      for (const side of [cx, -cx]) {
+        const treeSize = 1.7 + state.rng() * 0.4;
+        const tree = makeSprite('obj_tree', treeSize, treeSize * 1.25);
+        tree.position.set(side + (state.rng() - 0.5) * 0.4, treeSize * 0.55, z + (state.rng() - 0.5) * 0.3);
+        world.add(tree);
+      }
+    }
+  }
+
   if (type === 'grass') {
     const isBuildingLane = laneIndex > 0 && laneIndex % BUILDING_INTERVAL === 0;
     if (isBuildingLane) {
-      // 수학책 정 중앙 (cx=0)
+      // 수학책 (cx=0) — 가로 확장(시각상 cx=-1..+1 모두 책에 가려짐)
       const isBossBook = state.variant === 'boss';
       const slotId = isBossBook ? 'obj_math_book_boss' : 'obj_math_book_building';
-      const sz = isBossBook ? 2.6 : 2.0;
+      const sz = isBossBook ? 3.0 : 2.5;
       const book = makeSprite(slotId, sz, sz * 1.35);
       book.position.set(0, sz * 0.7, z);
       world.add(book);
       lane.book = { mesh: book, slot: slotId };
       lane.isBuildingLane = true;
-      // 책 입구 강조: 책 정면(cx=-1, 0, +1) 3칸은 비우고, 양 끝(cx=±2..±6)만 나무로 막음
-      // → 시각상 막다른 길로 보이지 않고, 책 정면 통로가 자연스럽게 보임
-      // 책은 cx=0에 있어 cx=±1로 우회 가능하지만 책을 자주 지나가도록 유도
+      // 강한 통로: cx=0만 통과 가능, cx=±1..±6 모두 나무로 막음
+      // 책 본체가 가로로 크게 보여 cx=0이 명확한 입구로 인식됨
       for (let cx = -6; cx <= 6; cx++) {
-        if (Math.abs(cx) < 2) continue;  // cx=-1, 0, +1 통로
+        if (cx === 0) continue;  // cx=0 책 정면만 통로
         const tree = makeSprite('obj_tree', 1.7, 2.1);
         tree.position.set(cx, 1.05, z);
         world.add(tree);
@@ -536,15 +565,19 @@ function spawnLane(z, forceType) {
 
   if (type === 'road') {
     const pool = VARIANTS[state.variant].truck_color_pool;
-    const density = VARIANTS[state.variant].truck_density;
-    const count = Math.max(1, Math.round(1.5 * density + state.rng() * 1));
+    // lane index에 따라 트럭 수/속도 증가
+    const minCount = Math.max(1, Math.floor(diff.truckCount));
+    const extraCount = state.rng() < (diff.truckCount - minCount) ? 1 : 0;
+    const count = minCount + extraCount;
     const dir = state.rng() < 0.5 ? 1 : -1;
-    const speed = (1.7 + state.rng() * 1.0) * (state.variant === 'boss' ? 1.3 : 1) * dir;
-    const startGap = LANE_W / count;
+    const speed = diff.truckSpeed * (0.85 + state.rng() * 0.3) * (state.variant === 'boss' ? 1.2 : 1) * dir;
+    // 트럭 분포: PLAYABLE 영역(±6) 안에 골고루. 시각 벽 영역에는 안 보임 (트럭 wrap도 그 안에서)
+    const usableW = PLAYABLE_HALF * 2 + 2;  // 약 14 unit
+    const startGap = usableW / count;
     for (let i = 0; i < count; i++) {
       const color = pool[Math.floor(state.rng() * pool.length)];
       const truck = makeVoxelTruck(color, dir);
-      truck.position.set(-CELL_HALF * 0.6 + i * startGap + state.rng() * 1.5, 0, z);
+      truck.position.set(-usableW / 2 + i * startGap + state.rng() * 1.0, 0, z);
       world.add(truck);
       lane.objects.push({ kind: 'truck', mesh: truck, speed, w: 2.0 });
     }
@@ -552,20 +585,23 @@ function spawnLane(z, forceType) {
 
   if (type === 'river') {
     const dir = state.rng() < 0.5 ? 1 : -1;
-    const speed = (0.85 + state.rng() * 0.5) * dir;
-    // 뗏목(raft): 더 두껍고 넓게. 강 칸에 빈 공간 명확히 — 충돌 미스 시 즉시 익사
+    const speed = (0.7 + state.rng() * 0.4) * (1 + laneIndex * 0.01) * dir;
     const raftW = 2.8;
-    const raftGap = state.variant === 'boss' ? 6.0 : 5.0;  // 뗏목 사이 빈 공간 충분히
-    const count = Math.ceil(LANE_W / raftGap) + 1;
+    // 뗏목은 PLAYABLE 영역(±6) 안에서만. 시각 벽 영역에는 없음
+    const usableW = PLAYABLE_HALF * 2;
+    const raftGap = state.variant === 'boss' ? 5.5 : 4.5;
+    const count = Math.ceil(usableW / raftGap) + 1;
     const offset0 = state.rng() * raftGap;
-    // 뗏목 — BoxGeometry voxel (X축 long, 강 lane과 자동 정렬)
     for (let i = 0; i < count; i++) {
       const raft = makeVoxelRaft(raftW);
-      raft.position.set(-CELL_HALF * 0.6 + offset0 + i * raftGap, 0, z);
+      raft.position.set(-usableW / 2 + offset0 + i * raftGap, 0, z);
       world.add(raft);
       lane.objects.push({ kind: 'log', mesh: raft, speed, w: raftW });
     }
   }
+
+  // 모든 lane type에 양 끝 시각 벽(큰 나무) 추가 → scene.background 가림
+  addVisualWall(z);
 
   lanes.push(lane);
   return lane;
@@ -767,10 +803,10 @@ function presentQuiz(p, lane) {
     nextLaneZ += CELL;
     targetLane = spawnLane(nextLaneZ, 'grass');
   }
+  const positions = [-3, -1, 1, 3];
   // 보기 가림 방지 — target lane의 모든 decoration/coin 제거
   for (const d of targetLane.decorations) {
-    world.remove(d.mesh);
-    d.mesh.material?.dispose?.();
+    world.remove(d.mesh); d.mesh.material?.dispose?.();
   }
   targetLane.decorations = [];
   targetLane.blockedCells.clear();
@@ -779,17 +815,31 @@ function presentQuiz(p, lane) {
     targetLane.coin.mesh.material?.dispose?.();
     targetLane.coin = null;
   }
-  const positions = [-3, -1, 1, 3];
+  // 인접 lane (앞뒤 2개)도 카드 cx 위치(±3, ±1)의 decoration 제거
+  for (const off of [-1, 1, 2]) {
+    const adj = lanes[targetLane.index + off];
+    if (adj && adj.decorations) {
+      const keep = [];
+      for (const d of adj.decorations) {
+        if (positions.includes(d.cx)) {
+          world.remove(d.mesh); d.mesh.material?.dispose?.();
+          adj.blockedCells.delete(d.cx);
+        } else { keep.push(d); }
+      }
+      adj.decorations = keep;
+    }
+  }
   const tiles = indexed.map((it, idx) => {
-    const tile = makeSprite('obj_quiz_tile', 1.0, 1.0);
-    tile.position.set(positions[idx], 0.5, targetLane.z);
+    // tile y 높이 1.2 — 다른 lane decoration(나무) 위에 명확히 보임
+    const tile = makeSprite('obj_quiz_tile', 1.2, 1.2);
+    tile.position.set(positions[idx], 1.0, targetLane.z);
     world.add(tile);
-    // 분수 텍스트 sprite (잔디에 누이지 않고 살짝 떠 있게 — 가독성 ↑)
+    // 분수 텍스트 sprite — tile 위 살짝
     const labelTex = makeTextTexture(it.c, 256, 256);
     const labelMat = new THREE.SpriteMaterial({ map: labelTex, transparent: true });
     const labelSprite = new THREE.Sprite(labelMat);
-    labelSprite.scale.set(0.95, 0.95, 1);
-    labelSprite.position.set(positions[idx], 1.15, targetLane.z);
+    labelSprite.scale.set(1.1, 1.1, 1);
+    labelSprite.position.set(positions[idx], 2.0, targetLane.z);
     world.add(labelSprite);
     return { cx: positions[idx], mesh: tile, label: labelSprite, isCorrect: it.isAns };
   });
