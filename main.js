@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v15';
+const BUILD_VERSION = 'v16';
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -66,14 +66,13 @@ const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
 const SPRITE_ROAD_TILT = -0.30;   // 17° CW (시각 강화)
 
 function makeCamera(aspect, playerCount) {
-  // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
-  // 분할 화면 비율이 좁을수록 viewSize 키워서 lane이 가득 차도록
-  let viewSize = 13;
-  if (playerCount >= 2) viewSize = 12;
-  if (playerCount >= 3) viewSize = 11;
-  if (playerCount >= 4) viewSize = 10;
-  // aspect가 너무 좁으면 가로가 좁아 lane 안 보임 → viewSize 보정
-  if (aspect < 0.55) viewSize = Math.max(10, viewSize * 0.55 / aspect * 0.6);
+  // viewSize는 화면 세로 단위. ortho 가로 = viewSize * aspect.
+  // 화면 가로에 lane(13 unit)이 가득 차도록: viewSize * aspect ≈ 13 + 여유
+  // 따라서 viewSize ≈ (13 + 1) / aspect = 14 / aspect 가 최적
+  const targetWidth = 14;  // lane 13 + 여유 1 unit
+  let viewSize = targetWidth / Math.max(aspect, 0.4);
+  // 너무 크면 화면이 멀어 보이고, 너무 작으면 작아 보임. 적정 범위로 클램프.
+  viewSize = Math.max(10, Math.min(viewSize, 18));
 
   const c = new THREE.OrthographicCamera(
     -viewSize * aspect / 2, viewSize * aspect / 2,

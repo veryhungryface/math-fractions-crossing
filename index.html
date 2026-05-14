@@ -64,16 +64,16 @@
     .tbtn-up:active, .tbtn-up.pressed { background: linear-gradient(180deg, #FFE564, #FFD23A); }
 
     /* 퀴즈 모달 (중앙 상단) */
-    #quiz-modal { position: absolute; top: 110px; left: 50%; transform: translateX(-50%);
-      width: 90%; max-width: 560px;
-      background: rgba(20,20,28,0.95); padding: 18px 24px; border-radius: 18px;
-      border: 3px solid rgba(255,210,58,0.7); box-shadow: 0 10px 40px rgba(0,0,0,0.55);
+    #quiz-modal { position: absolute; top: 92px; left: 50%; transform: translateX(-50%);
+      max-width: 420px;
+      background: rgba(20,20,28,0.95); padding: 10px 22px; border-radius: 14px;
+      border: 2px solid rgba(255,210,58,0.7); box-shadow: 0 6px 24px rgba(0,0,0,0.55);
       display: none; pointer-events: none; z-index: 20;
     }
-    #quiz-modal.show { display: block; animation: pop .25s ease-out; }
-    #quiz-modal .label { font-size: 13px; color: #FFD23A; letter-spacing: 2px; margin-bottom: 6px; }
-    #quiz-modal .q { font-size: 40px; font-weight: 800; text-align: center; padding: 4px 0 10px; }
-    #quiz-modal .hint { text-align: center; font-size: 13px; color: #aaa; }
+    #quiz-modal.show { display: block; animation: pop .2s ease-out; }
+    #quiz-modal .label { font-size: 11px; color: #FFD23A; letter-spacing: 2px; margin-bottom: 2px; text-align: center; }
+    #quiz-modal .q { font-size: 28px; font-weight: 800; text-align: center; padding: 2px 0; }
+    #quiz-modal .hint { text-align: center; font-size: 11px; color: #aaa; }
     @keyframes pop { from { transform: translate(-50%, 10px) scale(.95); opacity: 0; } to { transform: translate(-50%, 0) scale(1); opacity: 1; } }
 
     /* 보스 배너 */
@@ -233,6 +233,6 @@
     </div>
   </div>
 
-  <script type="module" src="./main.js?v=20260515-v15"></script>
+  <script type="module" src="./main.js?v=20260515-v16"></script>
 </body>
 </html>
