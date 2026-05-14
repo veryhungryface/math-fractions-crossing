@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // ============================================================
 // CONFIG
 // ============================================================
-const BUILD_VERSION = 'v6-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
+const BUILD_VERSION = 'v7-2026.05.14';   // 화면 우하단에 표시 — 캐시 검증용
 const config = await fetch('./config.json?v=' + BUILD_VERSION).then(r => r.json());
 const QBANK = config.question_bank;
 const VARIANTS = config.variants;
@@ -58,8 +58,9 @@ scene.add(sun);
 // 카메라 offset (1P 기준)
 // camOffset.x = -3 → 캐릭터의 좌측 뒤 위 → 진행 방향 +Z가 화면 우상단(약 12시 30분 방향)으로 보임.
 // Three.js Orthographic의 right vector 부호 때문에 게임 +X는 화면 왼쪽으로 매핑됨 (코드에서 보정).
-const CAM_OFFSET = new THREE.Vector3(-3, 14, -10);
-const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 4);
+// player가 화면 아래쪽에 보이도록 lookAhead z를 더 멀리 두기 → hop 시 player가 화면 위로 명확히 이동
+const CAM_OFFSET = new THREE.Vector3(-3, 14, -8);
+const CAM_LOOK_AHEAD = new THREE.Vector3(0, 0, 6);
 
 function makeCamera(aspect, playerCount) {
   // 4P 모드에서는 viewport 가로가 좁아 lane 양옆이 잘림 → viewSize를 늘려 더 넓은 영역 보이게
@@ -770,11 +771,12 @@ function tick() {
   requestAnimationFrame(tick);
 
   if (state.mode === 'play') {
-    // 트럭/뗏목 wrap — lane 끝 살짝 너머에서 자연스럽게 사라짐/등장 (잘림 방지)
+    // 트럭/뗏목 wrap — 강 경계 안쪽에서 wrap (뗏목 끝이 lane 끝과 거의 일치)
     for (const lane of lanes) {
       for (const obj of lane.objects) {
         obj.mesh.position.x += obj.speed * dt;
-        const wrapLimit = CELL_HALF + obj.w / 2 + LANE_VISUAL_PAD;
+        // 뗏목 끝(obj.w/2)이 lane 끝(CELL_HALF)에서 살짝 안쪽까지만 보이게
+        const wrapLimit = CELL_HALF - obj.w / 2 + 0.4;
         if (obj.mesh.position.x > wrapLimit) obj.mesh.position.x = -wrapLimit;
         if (obj.mesh.position.x < -wrapLimit) obj.mesh.position.x = wrapLimit;
       }
